@@ -9,24 +9,11 @@
 
 setwd("/home/ajo/gitRepos/project")
 
-library(tree)
+library(tree) # For regression trees. 
 library(dplyr)
 library(keras)
-
-# How to use the library tree with some example data (for future reference)
-# library(ISLR)
-# data("Carseats")
-# set.seed(4268)
-# n = nrow(Carseats)
-# train = sample(1:n, 0.7 * n, replace = F)
-# test = (1:n)[-train]
-# Carseats.train = Carseats[train, ]
-# Carseats.test = Carseats[-train, ]
-# tree.mod = tree(Sales ~ ., data = Carseats.train)
-# summary(tree.mod)
-# plot(tree.mod)
-# text(tree.mod, pretty = 0)
-
+library(pROC) # For ROC curve.
+library(caret) # For confusion matrix.
 
 ###################################### Loading and cleaning the Adult data.
 data1 <- read.csv("adult.data", header = F) 
@@ -43,9 +30,10 @@ adult.data$y[adult.data$y == " <=50K."] <- "<=50K"
 adult.data$y[adult.data$y == " <=50K"] <- "<=50K"
 adult.data$y[adult.data$y == " >50K."] <- ">50K"
 adult.data$y[adult.data$y == " >50K"] <- ">50K"
-adult.data$y[adult.data$y == ">50K"] <- 0
-adult.data$y[adult.data$y == "<=50K"] <- 1
-adult.data$y <- as.factor(adult.data$y)
+adult.data$y[adult.data$y == ">50K"] <- 1
+adult.data$y[adult.data$y == "<=50K"] <- 0
+adult.data$y <- as.numeric(adult.data$y)
+adult.data$sex <- as.factor(adult.data$sex)
 
 # binarize <- function(vector){
 #   most_frequent <- names(sort(table(vector), decreasing = T))[1]
@@ -70,18 +58,42 @@ adult.data$workclass <- binarize(adult.data$workclass)
 adult.data$education <- binarize(adult.data$education)
 adult.data$marital_status <- binarize(adult.data$marital_status)
 adult.data$occupation <- binarize(adult.data$occupation)
+adult.data$relationship <- binarize(adult.data$relationship)
 adult.data$race <- binarize(adult.data$race)
 adult.data$native_country <- binarize(adult.data$native_country)
 
 # write.csv(adult.data, file = "adult_data_binarized.csv", row.names = F)
 save(adult.data, file = "adult_data_binarized.RData") # Save the dataset including all factors etc.
 
-data <- adult.data[,-which(names(adult.data) == "y")] # Training features. 
-y <- adult.data[,c("y")] # Training label.
+summary(adult.data)
 
 ########################################### Build ML models for classification: which individuals obtain an income more than 50k yearly?
 
-# We should normalize the continuous variables. This will be done later. 
+# Normalize the continuous variables.
+cont <- c("age","fnlwgt","education_num","capital_gain","capital_loss","hours_per_week")
+
+normalize <- function(x) {
+  return((x- min(x))/(max(x)-min(x)))
+}
+
+for (c in cont){
+  adult.data[,c] <- normalize(adult.data[,c])
+}
+
+summary(adult.data) # Now the data has been normalized. 
+
+# Make train and test data.
+set.seed(42)
+train.ratio <- 2/3
+sample.size <- floor(nrow(adult.data) * train.ratio)
+train.indices <- sample(1:nrow(adult.data), size = sample.size)
+train <- adult.data[train.indices, ]
+test <- adult.data[-train.indices, ]
+
+x_train <- data.matrix(train[,-which(names(train) == "y")]) # Training covariates. 
+y_train <- train[,c("y")] # Training label.
+x_test <- data.matrix(test[,-which(names(test) == "y")]) # Testing covariates. 
+y_test <- test[,c("y")] # Testing label.
 
 ANN <- keras_model_sequential() %>%
   layer_dense(units = 18, activation = 'relu', input_shape = c(ncol(data))) %>%
@@ -96,35 +108,83 @@ ANN %>% compile(loss = 'binary_crossentropy',
                   optimizer = optimizer_rmsprop(),
                   metrics = c('accuracy'))
 # train (fit)
-history <- ANN %>% fit(data.matrix(data), y, epochs = 20, 
+history <- ANN %>% fit(x_train, y_train, epochs = 20, 
                          batch_size = 1024, validation_split = 0.2)
 # plot
 plot(history)
 
 # evaluate on training data. 
-model %>% evaluate(x_train, y_train)
+ANN %>% evaluate(x_train, y_train)
 
 # evaluate on test data. 
-model %>% evaluate(x_test, y_test)
+ANN %>% evaluate(x_test, y_test)
 
+y_pred <- ANN %>% predict(x_test) %>% `>`(0.5) %>% k_cast("int32")
+y_pred <- as.array(y_pred)
+(tab <- table("Predictions" = y_pred, "Labels" = y_test))
+confusionMatrix(factor(y_pred), factor(y_test))
+roc(response = y_test, predictor = as.numeric(y_pred), plot = T)
+
+# Linear model (logistic regression).
+lin_mod <- glm(y ~ ., family=binomial(link='logit'), data=train)
+summary(lin_mod)
+y_pred_logreg <- predict(lin_mod, test, type = "response")
+y_pred_logreg[y_pred_logreg >= 0.5 ] <- 1
+y_pred_logreg[y_pred_logreg < 0.5 ] <- 0
+confusionMatrix(factor(y_pred_logreg), factor(y_test))
+roc(response = y_test, predictor = as.numeric(y_pred_logreg), plot = T)
 
 ############################################ This is where the generation algorithm begins. 
-H <- 1:10 # Points we want to explain. This is the list of factuals. 
-K <- 5 # Number of returned possible counterfactuals before pre-processing.
+data_min_response <- adult.data[,-which(names(adult.data) == "y")]
+H <- y_pred_logreg[y_pred_logreg == 0] # Points we want to explain. This is the list of factuals. Based on logreg for now. 
+K <- 2 # Number of returned possible counterfactuals before pre-processing.
 fixed_features <- c("age", "sex") # Names of fixed features from the data. 
-mut_features <- base::setdiff(colnames(data), fixed_features) # Names of mutable features from the data.
+mut_features <- base::setdiff(colnames(data_min_response), fixed_features) # Names of mutable features from the data.
+mut_datatypes <- sapply(data_min_response[mut_features], class)
 u <- length(fixed_features) # Number of fixed features. 
 q <- length(mut_features) # Number of mutable features. 
 p <- q+u # Total number of features.
-all.equal(dim(data)[2], p) # We want to check that p is correctly defined. Looks good!
+all.equal(ncol(data_min_response), p) # We want to check that p is correctly defined. Looks good!
 
-T_j <- 1:10 # Vector of fitted trees!
 
+# Fit the regression trees and add all these objects to a list.
+T_j <- list() # Vector of fitted trees!
+fixed_form <- paste(fixed_features, collapse = "+") # Fixed features, for making the formula. 
+for (i in 1:q){
+  #print(i)
+  covariates <- paste(c(fixed_features,mut_features[1:i-1]), collapse = "+")
+  tot_form <- as.formula(paste(mut_features[i]," ~ ", covariates, sep= ""))
+  print(tot_form)
+  if (mut_datatypes[[i]] == "factor"){ 
+    T_j[[i]] <- tree(tot_form, data = train, control = tree.control(nobs = nrow(train), mincut = 80, minsize = 160), split = "gini", x = T)
+  } else if (mut_datatypes[[i]] == "numeric"){
+    T_j[[i]] <- tree(tot_form, data = train, control = tree.control(nobs = nrow(train), mincut = 1, minsize = 2), split = "deviance", x = T)
+  } else {
+    stop("Error: Datatypes need to be either factor or numeric.")
+  } # Noe rart med de som bruker gini index her!!!! Mulig disse trærne må bygges bedre senere, men nå er de i hvert fall der!
+      # Den som brukes deviance splittes ikke heller tror jeg! Generelt sett noe som må gjøres med trærne her!
+}
+
+plot_tree <- function(tree.mod){
+  # Helper function to plot each tree nicely (to see if it makes sense).
+  print(summary(tree.mod))
+  plot(tree.mod)
+  text(tree.mod, pretty = 0)
+}
+
+plot_tree(T_j[[1]])
+plot_tree(T_j[[2]])
+plot_tree(T_j[[3]])
+plot_tree(T_j[[4]])
+plot_tree(T_j[[5]])
+
+############### Generate counterfactuals based on trees etc. 
 # Generate counterfactual per sample. 
 generate <- function(h){
   # Instantiate entire D_h-matrix for all features. 
   D_h <- as.data.frame(matrix(data = rep(NA, K*p), nrow = K, ncol = p))
-  colnames <- c(fixed_features, mut_features)
+  colnames(D_h) <- c(fixed_features, mut_features)
+  
   
   # Fill the matrix D_h with copies of the vectors of fixed features. 
   # All rows should have the same value in all the fixed features. 
@@ -139,13 +199,16 @@ generate <- function(h){
     for (i in 1:K){
       # Add a single sample from the end node of tree T_j[j] based on data D_h[i,u+j] to d[i].
       # Kan tenkes at det blir noe indekseringstrøbbel her!! Første tre skal kun være basert på de fikserte featuresene!!
-      d[i] <- predict(T_j[j], data = D_h[i,u+j]) # predict blir feil! Ønsker å legge til en training sample som faller innunder leaf node her!
+      d[i] <- predict(T_j[[j]], newdata = D_h[i,1:(u+j-1)], type = "class") # predict blir feil! Ønsker å legge til en training sample som faller innunder leaf node her!
       # Tree where kan kanskje brukes! Se docs for å se hva jeg faktisk kan bruke!
+      # kan bruke tree$where og tree$x eller tree$y her tenker jeg. Må finne ut hvordan jeg skal lage liste over treningsdataene per node!
     }
     D_h[,u+j] <- d # Add all the tree samples based on the jth mutable feature to the next column. 
   }
   D_h
 }
+
+generate(data_min_response[1,]) # Wrong for classification trees only with class! Need to fix something for regression trees in the loop above. 
 
 # Generation of counterfactuals for each point, before post-processing.
 for (x_h in H){
