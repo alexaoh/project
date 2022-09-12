@@ -8,8 +8,11 @@
 # https://www.kaggle.com/datasets/brycecf/give-me-some-credit-dataset
 
 setwd("/home/ajo/gitRepos/project")
+set.seed(42) # Set seed to begin with!
 
 library(tree) # For regression trees. 
+library(rpart) # Try this for building CART trees instead!
+library(rpart.plot) # For plotting rpart trees in a more fancy way.
 library(dplyr)
 library(keras)
 library(pROC) # For ROC curve.
@@ -83,7 +86,6 @@ for (c in cont){
 summary(adult.data) # Now the data has been normalized. 
 
 # Make train and test data.
-set.seed(42)
 train.ratio <- 2/3
 sample.size <- floor(nrow(adult.data) * train.ratio)
 train.indices <- sample(1:nrow(adult.data), size = sample.size)
@@ -134,10 +136,16 @@ y_pred_logreg[y_pred_logreg < 0.5 ] <- 0
 confusionMatrix(factor(y_pred_logreg), factor(y_test))
 roc(response = y_test, predictor = as.numeric(y_pred_logreg), plot = T)
 
+# Add the predictions to the dataframe. Here we choose the logistic regression for now!
+new_predicted_data <- cbind(test, "y_pred" = y_pred_logreg)
+
 ############################################ This is where the generation algorithm begins. 
-data_min_response <- adult.data[,-which(names(adult.data) == "y")]
-H <- y_pred_logreg[y_pred_logreg == 0] # Points we want to explain. This is the list of factuals. Based on logreg for now. 
-K <- 2 # Number of returned possible counterfactuals before pre-processing.
+data_min_response <- adult.data[,-which(names(adult.data) == "y")] # All covariates (removed the response from the data frame).
+
+# Points we want to explain. This is the list of factuals. Based on logreg for now. The ML model it is based on is set above, in "new_predicted_data".
+H <- new_predicted_data[new_predicted_data["y_pred"] == 0, -which(names(new_predicted_data) %in% c("y","y_pred"))] 
+
+K <- 100 # Number of returned possible counterfactuals before pre-processing.
 fixed_features <- c("age", "sex") # Names of fixed features from the data. 
 mut_features <- base::setdiff(colnames(data_min_response), fixed_features) # Names of mutable features from the data.
 mut_datatypes <- sapply(data_min_response[mut_features], class)
@@ -150,71 +158,114 @@ all.equal(ncol(data_min_response), p) # We want to check that p is correctly def
 # Fit the regression trees and add all these objects to a list.
 T_j <- list() # Vector of fitted trees!
 fixed_form <- paste(fixed_features, collapse = "+") # Fixed features, for making the formula. 
+total_formulas <- list()
 for (i in 1:q){
   #print(i)
   covariates <- paste(c(fixed_features,mut_features[1:i-1]), collapse = "+")
   tot_form <- as.formula(paste(mut_features[i]," ~ ", covariates, sep= ""))
+  total_formulas[[i]] <- tot_form
   print(tot_form)
   if (mut_datatypes[[i]] == "factor"){ 
-    T_j[[i]] <- tree(tot_form, data = train, control = tree.control(nobs = nrow(train), mincut = 80, minsize = 160), split = "gini", x = T)
-  } else if (mut_datatypes[[i]] == "numeric"){
-    T_j[[i]] <- tree(tot_form, data = train, control = tree.control(nobs = nrow(train), mincut = 1, minsize = 2), split = "deviance", x = T)
-  } else {
+    #T_j[[i]] <- tree(tot_form, data = adult.data, control = tree.control(nobs = nrow(adult.data), mincut = 80, minsize = 160), split = "gini", x = T)
+    T_j[[i]] <- rpart(tot_form, data = adult.data, method = "class", control = rpart.control(minsplit = 2, minbucket = 1)) 
+    # Method = "class": Uses Gini index, I believe. Check the docs again. 
+  } else if (mut_datatypes[[i]] == "numeric"){ # mean squared error.
+    #T_j[[i]] <- tree(tot_form, data = adult.data, control = tree.control(nobs = nrow(adult.data), mincut = 5, minsize = 10), split = "deviance", x = T)
+    T_j[[i]] <- rpart(tot_form, data = adult.data, method = "anova", control = rpart.control(minsplit = 2, minbucket = 1)) 
+    # Method = "anova": SST-(SSL+SSR). Check out the docs. This should (hopefully) be the same as Mean Squared Error. 
+  } else { 
     stop("Error: Datatypes need to be either factor or numeric.")
-  } # Noe rart med de som bruker gini index her!!!! Mulig disse trærne må bygges bedre senere, men nå er de i hvert fall der!
-      # Den som brukes deviance splittes ikke heller tror jeg! Generelt sett noe som må gjøres med trærne her!
+  } # Flere av trærne som blir kun en root node. Mulig noe må endres på!?
 }
 
-plot_tree <- function(tree.mod){
-  # Helper function to plot each tree nicely (to see if it makes sense).
+plot_tree <- function(index){
+  # Helper function to plot each tree nicely (to see if it makes sense). Also prints the formula that was used to construct the tree. 
+  par(mar = c(1,1,1,1))
+  cat("Formula fitted: ")
+  print(total_formulas[[index]])
+  cat("\n")
+  tree.mod <- T_j[[index]]
   print(summary(tree.mod))
-  plot(tree.mod)
-  text(tree.mod, pretty = 0)
+  if (tree.mod$method == "class"){
+    rpart.plot::prp(tree.mod, extra = 4)  
+  } else {
+    rpart.plot::prp(tree.mod)
+  }
+  
+  
 }
 
-plot_tree(T_j[[1]])
-plot_tree(T_j[[2]])
-plot_tree(T_j[[3]])
-plot_tree(T_j[[4]])
-plot_tree(T_j[[5]])
+plot_tree(1)
+plot_tree(2)
+plot_tree(3)
+plot_tree(4)
+plot_tree(5)
+plot_tree(6)
+plot_tree(7)
+plot_tree(8)
+plot_tree(9)
+plot_tree(10)
+plot_tree(11)
+plot_tree(12)
 
 ############### Generate counterfactuals based on trees etc. 
 # Generate counterfactual per sample. 
-generate <- function(h){
+generate <- function(h, K = K){ # Use K from above as standard.
   # Instantiate entire D_h-matrix for all features. 
   D_h <- as.data.frame(matrix(data = rep(NA, K*p), nrow = K, ncol = p))
   colnames(D_h) <- c(fixed_features, mut_features)
   
-  
+
   # Fill the matrix D_h with copies of the vectors of fixed features. 
   # All rows should have the same value in all the fixed features. 
-  D_h[,fixed_features] <- h %>% dplyr::select(fixed_features) 
+  D_h[,fixed_features] <- h %>% dplyr::select(all_of(fixed_features))
+  D_h[, mut_features] <- h %>% dplyr::select(all_of(mut_features)) # Add this to get the correct datatypes (these are not used when predicting though!)
 
   # Now setup of D_h is complete. We move on to the second part, where we append columns to D_h. 
   
   for (j in 1:q){
+    cat("feat",feature_regressed <- mut_features[j], "\n")
+    cat("dtype",feature_regressed_dtype <- mut_datatypes[[j]], "\n")
+    
     d <- rep(NA, K) # Empty vector of length K. 
     # Will be inserted into D_h later (could col-bind also, but chose to instantiate entire D_h from the beginning).
     
     for (i in 1:K){
       # Add a single sample from the end node of tree T_j[j] based on data D_h[i,u+j] to d[i].
-      # Kan tenkes at det blir noe indekseringstrøbbel her!! Første tre skal kun være basert på de fikserte featuresene!!
-      d[i] <- predict(T_j[[j]], newdata = D_h[i,1:(u+j-1)], type = "class") # predict blir feil! Ønsker å legge til en training sample som faller innunder leaf node her!
-      # Tree where kan kanskje brukes! Se docs for å se hva jeg faktisk kan bruke!
-      # kan bruke tree$where og tree$x eller tree$y her tenker jeg. Må finne ut hvordan jeg skal lage liste over treningsdataene per node!
+      cat("end",end_node_distr <- predict(T_j[[j]], newdata = D_h[i,1:(u+j-1)]), "\n")
+      sorted <- sort(end_node_distr, decreasing = T, index.return = T)
+      largest_class <- sorted$x
+      largest_index <- sorted$ix
+      cat("largest",largest_class,"\n")
+      cat("largest_index",largest_index,"\n")
+      if (feature_regressed_dtype == "factor"){
+        cat("s:",s <- runif(1),"\n")
+        if (s >= largest_class[1]){ # This only works for two classes at this point!
+          d[i] <- levels(adult.data[,feature_regressed])[largest_index[2]]
+        } else {
+          d[i] <- levels(adult.data[,feature_regressed])[largest_index[1]]
+        }
+      } else { # Numeric
+        d[i] <- end_node_distr
+      }
     }
     D_h[,u+j] <- d # Add all the tree samples based on the jth mutable feature to the next column. 
   }
   D_h
 }
 
-generate(data_min_response[1,]) # Wrong for classification trees only with class! Need to fix something for regression trees in the loop above. 
-
 # Generation of counterfactuals for each point, before post-processing.
-for (x_h in H){
-  # x_h is a factual. 
-  D_h <- generate(x_h)
+generate_counterfact_for_H <- function(){
+  D_h_per_point <- list()
+  for (i in 1:nrow(H)){
+    # x_h is a factual. 
+    x_h <- H[i,]
+    D_h_per_point[[i]] <- generate(x_h)
+  }
+  D_h_per_point
 }
+
+D_h <- generate(H[1,], K = 100)
 
 # Post-processing.
 # fulfilling criterion 3.
