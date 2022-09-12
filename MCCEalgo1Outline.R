@@ -330,3 +330,19 @@ for (i in 1:nrow(unique_D_h)){
   }
   unique_D_h[i,"gower"] <- g/p
 }
+
+
+########################### Performance metrics.
+# Violation: Number of actionability constraints violated by the counterfactual.
+# This should inherently be zero if I have implemented the algorithm correctly!! 
+# Thus, this is an ok check to do. 
+unique_D_h$violation <- rep(NA, nrow(unique_D_h))
+for (i in 1:nrow(unique_D_h)){
+  unique_D_h[i,"violation"] <- sum(x_h[,fixed_features] != unique_D_h[i,fixed_features]) 
+}
+
+# Success: if the counterfactual produces a positive predictive response.
+# This is 1 inherently, from the post-processing step done above (where we only keep the rows in D_h that have positive predictive response).
+prediction_model(unique_D_h, method = "logreg") # As we can see, success = 1 for these counterfactuals. 
+
+# Feasibility: distance between the counterfactual and the training data.
