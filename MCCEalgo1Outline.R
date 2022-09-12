@@ -131,19 +131,30 @@ roc(response = y_test, predictor = as.numeric(y_pred), plot = T)
 lin_mod <- glm(y ~ ., family=binomial(link='logit'), data=train)
 summary(lin_mod)
 y_pred_logreg <- predict(lin_mod, test, type = "response")
-y_pred_logreg[y_pred_logreg >= 0.5 ] <- 1
-y_pred_logreg[y_pred_logreg < 0.5 ] <- 0
+y_pred_logreg[y_pred_logreg >= 0.5] <- 1
+y_pred_logreg[y_pred_logreg < 0.5] <- 0
 confusionMatrix(factor(y_pred_logreg), factor(y_test))
 roc(response = y_test, predictor = as.numeric(y_pred_logreg), plot = T)
+
+prediction_model <- function(x,method){
+  if (method == "logreg"){
+    return(predict(lin_mod, x, type = "response")) 
+  } else if (method == "ANN"){
+    # This will not work as I want to with the ANN.
+    y_pred <- ANN %>% predict(x_test) %>% `>`(0.5) %>% k_cast("int32")
+    y_pred <- as.array(y_pred)
+    return(y_pred)
+  } else {
+    stop("Methods 'logreg' and 'ANN' are the only two implemented thus far")
+  }
+}
 
 # Add the predictions to the dataframe. Here we choose the logistic regression for now!
 new_predicted_data <- cbind(test, "y_pred" = y_pred_logreg)
 
 ############################################ This is where the generation algorithm begins. 
 data_min_response <- adult.data[,-which(names(adult.data) == "y")] # All covariates (removed the response from the data frame).
-
-# Points we want to explain. This is the list of factuals. Based on logreg for now. The ML model it is based on is set above, in "new_predicted_data".
-H <- new_predicted_data[new_predicted_data["y_pred"] == 0, -which(names(new_predicted_data) %in% c("y","y_pred"))] 
+# Do not think that this is being used anywhere at this point!
 
 K <- 100 # Number of returned possible counterfactuals before pre-processing.
 fixed_features <- c("age", "sex") # Names of fixed features from the data. 
@@ -154,6 +165,8 @@ q <- length(mut_features) # Number of mutable features.
 p <- q+u # Total number of features.
 all.equal(ncol(data_min_response), p) # We want to check that p is correctly defined. Looks good!
 
+adult.data <- adult.data[,c(fixed_features, mut_features)] # Rearrange the data in order to match the ordering of D_h.
+# This is simply an implementation detail (for the steps in the post-processing).
 
 # Fit the regression trees and add all these objects to a list.
 T_j <- list() # Vector of fitted trees!
@@ -254,6 +267,15 @@ generate <- function(h, K = K){ # Use K from above as standard.
   D_h
 }
 
+# Points we want to explain. This is the list of factuals. Based on logreg for now. The ML model it is based on is set above, in "new_predicted_data".
+# Here we say that we want to explain predictions that are predicted as 0 (less than 50k a year). We want to find out what we need to change to change
+# this prediction into 1. This is done in the post-processing after generating all the possible counterfactuals. 
+preds <- prediction_model(test, method = "logreg")
+preds[preds >= 0.5] <- 1
+preds[preds < 0.5] <- 0
+new_predicted_data <- cbind(test[,colnames(adult.data)], "y_pred" = preds)
+H <- new_predicted_data[new_predicted_data["y_pred"] == 0, -which(names(new_predicted_data) %in% "y_pred")] 
+
 # Generation of counterfactuals for each point, before post-processing.
 generate_counterfact_for_H <- function(){
   D_h_per_point <- list()
@@ -265,12 +287,46 @@ generate_counterfact_for_H <- function(){
   D_h_per_point
 }
 
-D_h <- generate(H[1,], K = 100)
+x_h <- H[1,]
+D_h <- generate(x_h, K = 100)
 
-# Post-processing.
-# fulfilling criterion 3.
-c <- 0.6 # Threshold for removal. Not sure what value this should have to begin with. We assume a binary response in our case. 
-D_h <- D_h[f(D_h) >= c,] # f(*) is the R function that predicts according to the model we want to make explanations for. 
+####################### Post-processing.
+# Remove the rows of D_h not satisfying the listed criteria. 
+
+# Fulfill criterion 3.
+c <- 0.5 # Threshold for removal. Not sure what value this should have to begin with. We assume a binary response in our case. 
+D_h_crit3 <- D_h[prediction_model(D_h, method = "logreg") >= c,] # prediction_model(*) is the R function that predicts 
+# according to the model we want to make explanations for. 
+# We can see that many rows are the same. The duplicates are removed below. 
+unique_D_h <- unique(D_h_crit3)
 
 # fulfilling criterion 4.
 # Sparsity and Gower's distance.
+# These are calculated for each x_h separately!
+
+# Calculate Sparsity first: Number of features changed between x_h and the counterfactual.
+unique_D_h$sparsity <- rep(NA, nrow(unique_D_h))
+for (i in 1:nrow(unique_D_h)){
+  unique_D_h[i,"sparsity"] <- sum(x_h != unique_D_h[i,-ncol(unique_D_h)]) 
+}
+
+# Calculate Gower's distance next. 
+library(gower) # Could try to use this package instead of calculating everything by hand below!
+unique_D_h$gower <- rep(NA, nrow(unique_D_h))
+for (i in 1:nrow(unique_D_h)){
+  g <- 0 # Sum for Gower's distance.
+  p <- ncol(x_h)
+  dtypes <- sapply(x_h[colnames(x_h)], class)
+  for (j in 1:p){ # Assuming that the features are already normalized! Perhaps they need to be normalized again!?
+    d_j <- unique_D_h[i,j]
+    if (dtypes[j] == "numeric"){
+      R_j <- 1 # normalization factor, see not in line above.
+      g <- g + 1/R_j*abs(d_j-x_h[,j])
+    } else if (dtypes[j] == "factor"){
+      if (x_h[,j] != d_j){
+        g <- g + 1
+      }
+    }
+  }
+  unique_D_h[i,"gower"] <- g/p
+}
