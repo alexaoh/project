@@ -14,63 +14,16 @@ library(tree) # For regression trees.
 library(rpart) # Try this for building CART trees instead!
 library(rpart.plot) # For plotting rpart trees in a more fancy way.
 library(dplyr)
-library(keras)
+library(keras) # for deep learning models. 
 library(pROC) # For ROC curve.
 library(caret) # For confusion matrix.
 
-###################################### Loading and cleaning the Adult data.
-data1 <- read.csv("adult.data", header = F) 
-data2 <- read.csv("adult.test", header = F) 
-colnames(data1) <- colnames(data2) <- c("age","workclass","fnlwgt","education","education_num",
-                     "marital_status","occupation","relationship","race","sex",
-                     "capital_gain","capital_loss","hours_per_week","native_country", "y")
-dim(data1)[1] + dim(data2)[1] # Need to concat the test data and the other data given on the website to get all the data used in article. 
-adult.data <- rbind(data1, data2) # This is the full dataset.
-any(is.na(adult.data))
-
-# Make corrections to the variables (data types, binarization, etc).
-adult.data$y[adult.data$y == " <=50K."] <- "<=50K"
-adult.data$y[adult.data$y == " <=50K"] <- "<=50K"
-adult.data$y[adult.data$y == " >50K."] <- ">50K"
-adult.data$y[adult.data$y == " >50K"] <- ">50K"
-adult.data$y[adult.data$y == ">50K"] <- 1
-adult.data$y[adult.data$y == "<=50K"] <- 0
-adult.data$y <- as.numeric(adult.data$y)
-adult.data$sex <- as.factor(adult.data$sex)
-
-# binarize <- function(vector){
-#   most_frequent <- names(sort(table(vector), decreasing = T))[1]
-#   if (vector == most_frequent) vector = most.frequent else vector = "Other"
-#   vector
-# }
-
-# Find most frequent value.
-most_frequent <- function(vec){
-  names(sort(table(vec), decreasing = T))[1]
-}
-
-
-binarize <- function(vec){
-  vec[which(vec != most_frequent(vec))] <- "Other"
-  vec <- as.factor(vec)
-  vec
-}
-
-# Binarize all necessary columns
-adult.data$workclass <- binarize(adult.data$workclass)
-adult.data$education <- binarize(adult.data$education)
-adult.data$marital_status <- binarize(adult.data$marital_status)
-adult.data$occupation <- binarize(adult.data$occupation)
-adult.data$relationship <- binarize(adult.data$relationship)
-adult.data$race <- binarize(adult.data$race)
-adult.data$native_country <- binarize(adult.data$native_country)
-
-# write.csv(adult.data, file = "adult_data_binarized.csv", row.names = F)
-save(adult.data, file = "adult_data_binarized.RData") # Save the dataset including all factors etc.
-
-summary(adult.data)
+# Loading and cleaning the original data is done in separate files. 
 
 ########################################### Build ML models for classification: which individuals obtain an income more than 50k yearly?
+
+# Load the data we want first. 
+load("adult_data_binarized.RData", verbose = T)
 
 # Normalize the continuous variables.
 cont <- c("age","fnlwgt","education_num","capital_gain","capital_loss","hours_per_week")
@@ -103,17 +56,18 @@ ANN <- keras_model_sequential() %>%
   layer_dense(units = 3, activation = 'relu') %>% 
   layer_dense(units = 1, activation = 'sigmoid')
 
-summary(ANN)
-
 # compile (define loss and optimizer)
 ANN %>% compile(loss = 'binary_crossentropy',
                   optimizer = optimizer_rmsprop(),
                   metrics = c('accuracy'))
+
 # train (fit)
 history <- ANN %>% fit(x_train, y_train, epochs = 20, 
                          batch_size = 1024, validation_split = 0.2)
 # plot
 plot(history)
+
+summary(ANN)
 
 # evaluate on training data. 
 ANN %>% evaluate(x_train, y_train)
@@ -136,25 +90,24 @@ y_pred_logreg[y_pred_logreg < 0.5] <- 0
 confusionMatrix(factor(y_pred_logreg), factor(y_test))
 roc(response = y_test, predictor = as.numeric(y_pred_logreg), plot = T)
 
+# This is used to return the predicted probabilities according to the model we want to use (for later).
 prediction_model <- function(x,method){
+  # This returns the predicted probabilities of class 1 (>= 50k per year).
   if (method == "logreg"){
     return(predict(lin_mod, x, type = "response")) 
   } else if (method == "ANN"){
-    # This will not work as I want to with the ANN.
-    y_pred <- ANN %>% predict(x_test) %>% `>`(0.5) %>% k_cast("int32")
-    y_pred <- as.array(y_pred)
-    return(y_pred)
+    return(as.numeric(ANN %>% predict(x_test)))
   } else {
     stop("Methods 'logreg' and 'ANN' are the only two implemented thus far")
   }
 }
 
 # Add the predictions to the dataframe. Here we choose the logistic regression for now!
-new_predicted_data <- cbind(test, "y_pred" = y_pred_logreg)
+# THIS IS NOT NEEDED RIGHT NOW I BELIEVE. 
+# new_predicted_data <- cbind(test, "y_pred" = y_pred_logreg)
 
 ############################################ This is where the generation algorithm begins. 
 data_min_response <- adult.data[,-which(names(adult.data) == "y")] # All covariates (removed the response from the data frame).
-# Do not think that this is being used anywhere at this point!
 
 K <- 100 # Number of returned possible counterfactuals before pre-processing.
 fixed_features <- c("age", "sex") # Names of fixed features from the data. 
@@ -165,7 +118,7 @@ q <- length(mut_features) # Number of mutable features.
 p <- q+u # Total number of features.
 all.equal(ncol(data_min_response), p) # We want to check that p is correctly defined. Looks good!
 
-adult.data <- adult.data[,c(fixed_features, mut_features)] # Rearrange the data in order to match the ordering of D_h.
+#adult.data <- adult.data[,c(fixed_features, mut_features)] # Rearrange the data in order to match the ordering of D_h.
 # This is simply an implementation detail (for the steps in the post-processing).
 
 # Fit the regression trees and add all these objects to a list.
@@ -173,11 +126,10 @@ T_j <- list() # Vector of fitted trees!
 fixed_form <- paste(fixed_features, collapse = "+") # Fixed features, for making the formula. 
 total_formulas <- list()
 for (i in 1:q){
-  #print(i)
   covariates <- paste(c(fixed_features,mut_features[1:i-1]), collapse = "+")
   tot_form <- as.formula(paste(mut_features[i]," ~ ", covariates, sep= ""))
   total_formulas[[i]] <- tot_form
-  print(tot_form)
+  #print(tot_form)
   if (mut_datatypes[[i]] == "factor"){ 
     #T_j[[i]] <- tree(tot_form, data = adult.data, control = tree.control(nobs = nrow(adult.data), mincut = 80, minsize = 160), split = "gini", x = T)
     T_j[[i]] <- rpart(tot_form, data = adult.data, method = "class", control = rpart.control(minsplit = 2, minbucket = 1)) 
@@ -205,7 +157,6 @@ plot_tree <- function(index){
     rpart.plot::prp(tree.mod)
   }
   
-  
 }
 
 plot_tree(1)
@@ -221,7 +172,7 @@ plot_tree(10)
 plot_tree(11)
 plot_tree(12)
 
-############### Generate counterfactuals based on trees etc. 
+############################### Generate counterfactuals based on trees etc. 
 # Generate counterfactual per sample. 
 generate <- function(h, K = K){ # Use K from above as standard.
   # Instantiate entire D_h-matrix for all features. 
@@ -264,17 +215,21 @@ generate <- function(h, K = K){ # Use K from above as standard.
     }
     D_h[,u+j] <- d # Add all the tree samples based on the jth mutable feature to the next column. 
   }
-  D_h
+  D_h %>% mutate_if(is.character,as.factor) # Change characters to factors! THIS IS NOT TESTED THOROUGHLY BUT SEEMS TO WORK OK.
 }
-
-# Points we want to explain. This is the list of factuals. Based on logreg for now. The ML model it is based on is set above, in "new_predicted_data".
+ 
+# Points we want to explain. This is the list of factuals. 
 # Here we say that we want to explain predictions that are predicted as 0 (less than 50k a year). We want to find out what we need to change to change
-# this prediction into 1. This is done in the post-processing after generating all the possible counterfactuals. 
+# this prediction into 1. This is done in the post-processing after generating all the possible counterfactuals. According to the experiments in the article
+# we only generate one counterfactual per factual, for the first 100 undesirable observations we want to explain.
 preds <- prediction_model(test, method = "logreg")
-preds[preds >= 0.5] <- 1
-preds[preds < 0.5] <- 0
-new_predicted_data <- cbind(test[,colnames(adult.data)], "y_pred" = preds)
-H <- new_predicted_data[new_predicted_data["y_pred"] == 0, -which(names(new_predicted_data) %in% "y_pred")] 
+preds_sorted <- sort(preds, decreasing = F, index.return = T)
+preds_sorted_values <- preds_sorted$x[1:100]
+preds_sorted_indices <- preds_sorted$ix[1:100]
+#preds[preds >= 0.5] <- 1
+#preds[preds < 0.5] <- 0
+new_predicted_data <- cbind(test[preds_sorted_indices,colnames(adult.data)], "y_pred" = preds_sorted_values)
+H <- new_predicted_data[, -which(names(new_predicted_data) %in% "y_pred")] 
 
 # Generation of counterfactuals for each point, before post-processing.
 generate_counterfact_for_H <- function(){
@@ -284,13 +239,12 @@ generate_counterfact_for_H <- function(){
     x_h <- H[i,]
     D_h_per_point[[i]] <- generate(x_h)
   }
-  D_h_per_point
 }
 
 x_h <- H[1,]
 D_h <- generate(x_h, K = 100)
 
-####################### Post-processing.
+#################################### Post-processing.
 # Remove the rows of D_h not satisfying the listed criteria. 
 
 # Fulfill criterion 3.
@@ -313,6 +267,7 @@ for (i in 1:nrow(unique_D_h)){
 # Calculate Gower's distance next. 
 library(gower) # Could try to use this package instead of calculating everything by hand below!
 unique_D_h$gower <- rep(NA, nrow(unique_D_h))
+unique_D_h$gowerpack <- rep(NA, nrow(unique_D_h))
 for (i in 1:nrow(unique_D_h)){
   g <- 0 # Sum for Gower's distance.
   p <- ncol(x_h)
@@ -328,7 +283,9 @@ for (i in 1:nrow(unique_D_h)){
       }
     }
   }
+  # Disse to er ulike!! Finn ut hvorfor!?
   unique_D_h[i,"gower"] <- g/p
+  unique_D_h[i,"gowerpack"] <- gower_dist(x_h,unique_D_h[i,])
 }
 
 
@@ -346,3 +303,41 @@ for (i in 1:nrow(unique_D_h)){
 prediction_model(unique_D_h, method = "logreg") # As we can see, success = 1 for these counterfactuals. 
 
 # Feasibility: distance between the counterfactual and the training data.
+# As in the article, we choose Euclidean distance, k = 1/5 and w^[i] = 1/k = 1/5.
+
+feasibility <- function(){
+  k <- 5
+  w <- 1/k
+  p <- ncol(x_h)
+  euclidean <- function(x1,x2) sqrt(sum(x1-x2)^2)
+  f <- 0
+  e <- unique_D_h[1,]
+  
+  # The line below is not feasible! Perhaps need to loop over each row and save each answer. Then sort after.
+  #first_k_distances <- order(as.matrix(dist(rbind(e[,-which(names(e) %in% c("sparsity","gower","violation"))],adult.data)))[1,-1],decreasing = F)[1:k]
+  
+  # Find k nearest neighbors in dataset. 
+  k_nearest <- function(e, k = 5,data = adult.data){
+    n <- nrow(adult.data)
+    distances <- rep(NA, n)
+    for (r in 1:n){
+      distances[r] <- euclidean(e,adult.data[r,]) # Hva kan jeg gjøre med factors??
+    }
+    distances.ordered <- order(distances, decreasing = F)
+    return(distances.ordered[1:5])
+  }
+  
+  k_nearest_to_e <- adult.data[k_nearest(e[,-which(names(e) %in% c("sparsity","gower","violation"))], k = 5, data = adult.data),]
+  all.equal(k, length(k_nearest_to_e))
+  
+  for (i in 1:k){
+    f <- f + w/p*euclidean(e,k_nearest_to_e[i]) # Kunne sikkert bare brukt distances.ordered her, i stedet for å beregne dette på nytt her!!
+  }
+  
+  # Feasibility SPM: "K nearest observed data points" står det i artikkelen. Mener de da mellom e og dataen?
+}
+
+
+# Experiment 1:
+# Averages of all the metrics calculated and added to unique_D_h
+# Prøver både med logreg og ANN. 
