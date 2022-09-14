@@ -24,6 +24,7 @@ library(caret) # For confusion matrix.
 
 # Load the data we want first. 
 load("adult_data_binarized.RData", verbose = T)
+#load("adult_data_categ.RData", verbose = T) # For when I want to do experiment with all categories intact. 
 
 # Normalize the continuous variables.
 cont <- c("age","fnlwgt","education_num","capital_gain","capital_loss","hours_per_week")
@@ -102,7 +103,7 @@ prediction_model <- function(x,method){
   if (method == "logreg"){
     return(predict(lin_mod, x, type = "response")) 
   } else if (method == "ANN"){
-    return(as.numeric(ANN %>% predict(x_test)))
+    return(as.numeric(ANN %>% predict(x)))
   } else {
     stop("Methods 'logreg' and 'ANN' are the only two implemented thus far")
   }
@@ -202,7 +203,7 @@ generate <- function(h, K = 100){ # Use K from above as standard. K = 10000 is u
     
     for (i in 1:K){
       # Add a single sample from the end node of tree T_j[j] based on data D_h[i,u+j] to d[i].
-      end_node_distr <- predict(T_j[[j]], newdata = D_h[i,1:(u+j-1)])
+      end_node_distr <- predict(T_j[[j]], newdata = D_h[i,1:(u+j-1)]) # Usikker på om "predict" blir korrekt her? Burde det vært en "where" for å finne indeks først?
       sorted <- sort(end_node_distr, decreasing = T, index.return = T)
       largest_class <- sorted$x
       largest_index <- sorted$ix
@@ -228,7 +229,7 @@ generate <- function(h, K = 100){ # Use K from above as standard. K = 10000 is u
 # Here we say that we want to explain predictions that are predicted as 0 (less than 50k a year). We want to find out what we need to change to change
 # this prediction into 1. This is done in the post-processing after generating all the possible counterfactuals. According to the experiments in the article
 # we only generate one counterfactual per factual, for the first 100 undesirable observations we want to explain.
-preds <- prediction_model(test, method = "logreg")
+preds <- prediction_model(test, method = "logreg") # Fungerer ikke med ANN!!
 #preds_sorted <- sort(preds, decreasing = F, index.return = T) # Vil tro det kanskje ikke er dette de er på jakt etter!?
 #preds_sorted_values <- preds_sorted$x[1:10] # Skal egentlig ha de 100 første! Gjør dette for testing nå!
 #preds_sorted_indices <- preds_sorted$ix[1:10]
@@ -252,9 +253,9 @@ generate_counterfact_for_H <- function(H_l = H){
   D_h_per_point
 }
 
-D_h_per_point <- generate_counterfact_for_H() # Generate the matrix D_h for each factual we want to explain (in H)
-save(D_h_per_point, file = "H20K500.RData") # Save the generated D_h per point with K = 100 for the first 100 undesirable predictions.
-#load("H10K1000.RData", verbose = T)
+#D_h_per_point <- generate_counterfact_for_H() # Generate the matrix D_h for each factual we want to explain (in H)
+#save(D_h_per_point, file = "H20K500.RData") # Save the generated D_h per point with K = 100 for the first 100 undesirable predictions.
+load("H20K500.RData", verbose = T)
 
 
 ######################################## Post-processing.
@@ -265,6 +266,7 @@ fulfill_crit3_D_h <- function(D_h, c, pred.method){
   # according to the model we want to make explanations for. 
   # We can see that many rows are the same. The duplicates are removed below. 
   unique_D_h <- unique(D_h_crit3)
+  return(unique_D_h)
 }
 
 # Fulfill criterion 3.
@@ -276,7 +278,7 @@ fulfill_crit3 <- function(D_h_pp, c = 0.5, pred.method = "logreg"){
   D_h_pp
 }
 
-crit3_D_h_per_point <- fulfill_crit3(D_h_pp = D_h_per_point) # Fullfil criterion 3 for all (unique) generated possible counterfactuals. 
+crit3_D_h_per_point <- fulfill_crit3(D_h_pp = D_h_per_point, pred.method = "logreg") # Fullfil criterion 3 for all (unique) generated possible counterfactuals. 
 
 ##### fulfilling criterion 4.
 # Calculate Sparsity and Gower's distance for each D_h (per point).
@@ -398,19 +400,27 @@ final_counterfactuals <- generate_one_counterfactual_all_points(crit4_D_h_all_po
 # Violation: Number of actionability constraints violated by the counterfactual. 
 # This should inherently be zero if I have implemented the algorithm correctly!! 
 # Thus, this is an ok check to do. 
-unique_D_h$violation <- rep(NA, nrow(unique_D_h))
-for (i in 1:nrow(unique_D_h)){
-  unique_D_h[i,"violation"] <- sum(x_h[,fixed_features] != unique_D_h[i,fixed_features]) 
+
+violate <- function(){
+  # We leave this out for now!
+  unique_D_h$violation <- rep(NA, nrow(unique_D_h))
+  for (i in 1:nrow(unique_D_h)){
+    unique_D_h[i,"violation"] <- sum(x_h[,fixed_features] != unique_D_h[i,fixed_features]) 
+  }
+  
+  # Success: if the counterfactual produces a positive predictive response.
+  # This is 1 inherently, from the post-processing step done above (where we only keep the rows in D_h that have positive predictive response).
+  prediction_model(unique_D_h, method = "ANN") # As we can see, success = 1 for these counterfactuals. 
+  
 }
 
-# Success: if the counterfactual produces a positive predictive response.
-# This is 1 inherently, from the post-processing step done above (where we only keep the rows in D_h that have positive predictive response).
-prediction_model(unique_D_h, method = "logreg") # As we can see, success = 1 for these counterfactuals. 
+
 
 # Feasibility: distance between the counterfactual and the training data.
 # As in the article, we choose Euclidean distance, k = 1/5 and w^[i] = 1/k = 1/5.
 
 feasibility <- function(){
+  # We skip the feasibility for now!
   k <- 5
   w <- 1/k
   p <- ncol(x_h)
@@ -463,3 +473,5 @@ for (i in 1:length(final_counterfactuals)){
 
 exp1_MCCE <- data.frame("L0" = mean(L0s), "L2" = mean(L2s), "N_CE" = sum(N_CEs))
 knitr::kable(exp1_MCCE)
+write.csv(exp1_MCCE, file = "resulting_metrics.csv")
+save(D_h_per_point, file = "final_counterfactuals.RData")
