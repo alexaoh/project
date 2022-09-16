@@ -98,9 +98,6 @@ q <- length(mut_features) # Number of mutable features.
 p <- q+u # Total number of features.
 all.equal(ncol(data_min_response), p) # We want to check that p is correctly defined. Looks good!
 
-#adult.data <- adult.data[,c(fixed_features, mut_features)] # Rearrange the data in order to match the ordering of D_h.
-# This is simply an implementation detail (for the steps in the post-processing).
-
 # Fit the regression trees and add all these objects to a list.
 T_j <- list() # Vector of fitted trees!
 fixed_form <- paste(fixed_features, collapse = "+") # Fixed features, for making the formula. 
@@ -112,11 +109,13 @@ for (i in 1:q){
   #print(tot_form)
   if (mut_datatypes[[i]] == "factor"){ 
     #T_j[[i]] <- tree(tot_form, data = adult.data, control = tree.control(nobs = nrow(adult.data), mincut = 80, minsize = 160), split = "gini", x = T)
-    T_j[[i]] <- rpart(tot_form, data = adult.data, method = "class", control = rpart.control(minsplit = 2, minbucket = 1)) 
+    #T_j[[i]] <- rpart(tot_form, data = adult.data, method = "class", control = rpart.control(minsplit = 2, minbucket = 1)) 
+    T_j[[i]] <- rpart(tot_form, data = adult.data, method = "class", control = rpart.control(minbucket = 5, cp = 0.001)) 
     # Method = "class": Uses Gini index, I believe. Check the docs again. 
   } else if (mut_datatypes[[i]] == "numeric"){ # mean squared error.
     #T_j[[i]] <- tree(tot_form, data = adult.data, control = tree.control(nobs = nrow(adult.data), mincut = 5, minsize = 10), split = "deviance", x = T)
-    T_j[[i]] <- rpart(tot_form, data = adult.data, method = "anova", control = rpart.control(minsplit = 2, minbucket = 1)) 
+    #T_j[[i]] <- rpart(tot_form, data = adult.data, method = "anova", control = rpart.control(minsplit = 2, minbucket = 1)) 
+    T_j[[i]] <- rpart(tot_form, data = adult.data, method = "anova", control = rpart.control(minbucket = 5, cp = 0.001)) 
     # Method = "anova": SST-(SSL+SSR). Check out the docs. This should (hopefully) be the same as Mean Squared Error. 
   } else { 
     stop("Error: Datatypes need to be either factor or numeric.")
