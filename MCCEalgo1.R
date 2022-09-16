@@ -10,7 +10,7 @@
 setwd("/home/ajo/gitRepos/project")
 set.seed(42) # Set seed to begin with!
 
-library(tree) # For regression trees. 
+library(tree) # For regression trees. This is not needed anymore I believe. 
 library(rpart) # Try this for building CART trees instead!
 library(rpart.plot) # For plotting rpart trees in a more fancy way.
 library(dplyr)
@@ -20,30 +20,22 @@ library(caret) # For confusion matrix.
 
 # Loading and cleaning the original data is done in separate files. 
 
+rm(list = ls())  # make sure to remove previously loaded variables into the Session.
+
+# Source some of the needed code. 
+source("utilities.R")
+
 ########################################### Build ML models for classification: which individuals obtain an income more than 50k yearly?
 
 # Load the data we want first. 
 load("adult_data_binarized.RData", verbose = T)
 #load("adult_data_categ.RData", verbose = T) # For when I want to do experiment with all categories intact. 
 
-# Normalize the continuous variables.
+# List of continuous variables.
 cont <- c("age","fnlwgt","education_num","capital_gain","capital_loss","hours_per_week")
 
-normalize <- function(x) {
-  return((x- min(x))/(max(x)-min(x)))
-}
-
-# Save the minimums and maximums such that I can transform back later!
-mins <- c()
-maxs <- c()
-
-for (j in cont){
-  adult.data[,j] <- normalize(adult.data[,j])
-  mins <- c(mins, min(adult.data[,j]))
-  maxs <- c(maxs, max(adult.data[,j]))
-}
-
-summary(adult.data) # Now the data has been normalized. 
+adult.data.normalized <- normalize.data(data = adult.data, continuous_vars = cont) # returns list with data, mins and maxs.
+adult.data <- adult.data.normalized[[1]] # we are only interested in the data for now. 
 
 # Make train and test data.
 train.ratio <- 2/3
@@ -413,45 +405,6 @@ violate <- function(){
   prediction_model(unique_D_h, method = "ANN") # As we can see, success = 1 for these counterfactuals. 
   
 }
-
-
-
-# Feasibility: distance between the counterfactual and the training data.
-# As in the article, we choose Euclidean distance, k = 1/5 and w^[i] = 1/k = 1/5.
-
-feasibility <- function(){
-  # We skip the feasibility for now!
-  k <- 5
-  w <- 1/k
-  p <- ncol(x_h)
-  euclidean <- function(x1,x2) sqrt(sum(x1-x2)^2)
-  f <- 0
-  e <- unique_D_h[1,]
-  
-  # The line below is not feasible! Perhaps need to loop over each row and save each answer. Then sort after.
-  #first_k_distances <- order(as.matrix(dist(rbind(e[,-which(names(e) %in% c("sparsity","gower","violation"))],adult.data)))[1,-1],decreasing = F)[1:k]
-  
-  # Find k nearest neighbors in dataset. 
-  k_nearest <- function(e, k = 5,data = adult.data){
-    n <- nrow(adult.data)
-    distances <- rep(NA, n)
-    for (r in 1:n){
-      distances[r] <- euclidean(e,adult.data[r,]) # Hva kan jeg gjøre med factors??
-    }
-    distances.ordered <- order(distances, decreasing = F)
-    return(distances.ordered[1:5])
-  }
-  
-  k_nearest_to_e <- adult.data[k_nearest(e[,-which(names(e) %in% c("sparsity","gower","violation"))], k = 5, data = adult.data),]
-  all.equal(k, length(k_nearest_to_e))
-  
-  for (i in 1:k){
-    f <- f + w/p*euclidean(e,k_nearest_to_e[i]) # Kunne sikkert bare brukt distances.ordered her, i stedet for å beregne dette på nytt her!!
-  }
-  
-  # Feasibility SPM: "K nearest observed data points" står det i artikkelen. Mener de da mellom e og dataen?
-}
-
 
 # Experiment 1:
 # Averages of all the metrics calculated and added to unique_D_h
