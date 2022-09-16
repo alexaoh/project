@@ -7,9 +7,9 @@
 # Give me some credit data: 
 # https://www.kaggle.com/datasets/brycecf/give-me-some-credit-dataset
 
-setwd("/home/ajo/gitRepos/project")
-set.seed(42) # Set seed to begin with!
+rm(list = ls())  # make sure to remove previously loaded variables into the Session.
 
+setwd("/home/ajo/gitRepos/project")
 library(tree) # For regression trees. This is not needed anymore I believe. 
 library(rpart) # Try this for building CART trees instead!
 library(rpart.plot) # For plotting rpart trees in a more fancy way.
@@ -18,92 +18,57 @@ library(keras) # for deep learning models.
 library(pROC) # For ROC curve.
 library(caret) # For confusion matrix.
 
-# Loading and cleaning the original data is done in separate files. 
-
-rm(list = ls())  # make sure to remove previously loaded variables into the Session.
-
 # Source some of the needed code. 
-source("utilities.R")
+source("code/utilities.R")
 
 ########################################### Build ML models for classification: which individuals obtain an income more than 50k yearly?
+set.seed(42) # Set seed to begin with!
 
-# Load the data we want first. 
-load("adult_data_binarized.RData", verbose = T)
+# Load the data we want first. Loading and cleaning the original data is done in separate files. 
+load("data/adult_data_binarized.RData", verbose = T)
 #load("adult_data_categ.RData", verbose = T) # For when I want to do experiment with all categories intact. 
 
 # List of continuous variables.
 cont <- c("age","fnlwgt","education_num","capital_gain","capital_loss","hours_per_week")
 
 adult.data.normalized <- normalize.data(data = adult.data, continuous_vars = cont) # returns list with data, mins and maxs.
+summary(adult.data.normalized)
 adult.data <- adult.data.normalized[[1]] # we are only interested in the data for now. 
 
+
 # Make train and test data.
-train.ratio <- 2/3
-sample.size <- floor(nrow(adult.data) * train.ratio)
-train.indices <- sample(1:nrow(adult.data), size = sample.size)
-train <- adult.data[train.indices, ]
-test <- adult.data[-train.indices, ]
+train_and_test_data <- make.train.and.test(data = adult.data) # The function returns two matrices (x) and two vectors (y). 
+summary(train_and_test_data) # Returned list. 
+x_train <- train_and_test_data[[1]]
+y_train <- train_and_test_data[[2]]
+x_test <- train_and_test_data[[3]]
+y_test <- train_and_test_data[[4]]
 
-x_train <- data.matrix(train[,-which(names(train) == "y")]) # Training covariates. 
-y_train <- train[,c("y")] # Training label.
-x_test <- data.matrix(test[,-which(names(test) == "y")]) # Testing covariates. 
-y_test <- test[,c("y")] # Testing label.
+# Fit ANN.
+ANN <- fit.ANN(x_train, y_train, x_test, y_test)
 
-ANN <- keras_model_sequential() %>%
-  layer_dense(units = 18, activation = 'relu', input_shape = c(ncol(data))) %>%
-  layer_dense(units = 9, activation = 'relu') %>%
-  layer_dense(units = 3, activation = 'relu') %>% 
-  layer_dense(units = 1, activation = 'sigmoid')
+# Fit logreg.
+logreg <- fit.logreg(x_train, y_train, x_test, y_test)
 
-# compile (define loss and optimizer)
-ANN %>% compile(loss = 'binary_crossentropy',
-                  optimizer = optimizer_rmsprop(),
-                  metrics = c('accuracy'))
-
-# train (fit)
-history <- ANN %>% fit(x_train, y_train, epochs = 20, 
-                         batch_size = 1024, validation_split = 0.2)
-# plot
-plot(history)
-
-summary(ANN)
-
-# evaluate on training data. 
-ANN %>% evaluate(x_train, y_train)
-
-# evaluate on test data. 
-ANN %>% evaluate(x_test, y_test)
-
-y_pred <- ANN %>% predict(x_test) %>% `>`(0.5) %>% k_cast("int32")
-y_pred <- as.array(y_pred)
-(tab <- table("Predictions" = y_pred, "Labels" = y_test))
-confusionMatrix(factor(y_pred), factor(y_test))
-roc(response = y_test, predictor = as.numeric(y_pred), plot = T)
-
-# Linear model (logistic regression).
-lin_mod <- glm(y ~ ., family=binomial(link='logit'), data=train)
-summary(lin_mod)
-y_pred_logreg <- predict(lin_mod, test, type = "response")
-y_pred_logreg[y_pred_logreg >= 0.5] <- 1
-y_pred_logreg[y_pred_logreg < 0.5] <- 0
-confusionMatrix(factor(y_pred_logreg), factor(y_test))
-roc(response = y_test, predictor = as.numeric(y_pred_logreg), plot = T)
 
 # This is used to return the predicted probabilities according to the model we want to use (for later).
-prediction_model <- function(x,method){
+prediction_model <- function(x_test, y_test, method){
   # This returns the predicted probabilities of class 1 (>= 50k per year).
   if (method == "logreg"){
-    return(predict(lin_mod, x, type = "response")) 
+    return(predict(logreg, data.frame(cbind(x_test, "y" = y_test)), type = "response")) 
   } else if (method == "ANN"){
-    return(as.numeric(ANN %>% predict(x)))
+    return(as.numeric(ANN %>% predict(x_test)))
   } else {
     stop("Methods 'logreg' and 'ANN' are the only two implemented thus far")
   }
 }
 
-# Add the predictions to the dataframe. Here we choose the logistic regression for now!
-# THIS IS NOT NEEDED RIGHT NOW I BELIEVE. 
-# new_predicted_data <- cbind(test, "y_pred" = y_pred_logreg)
+# Predictions from each of the two models (just for show).
+d <- data.frame("logreg" = prediction_model(x_test, y_test, method = "logreg"), 
+                "ANN" = prediction_model(x_test, y_test, method = "ANN"))
+
+head(d, 20) # The predictions look relatively similar with the two methods. 
+tail(d, 20) # There are a few differences, but not many. 
 
 ############################################ This is where the generation algorithm begins. 
 data_min_response <- adult.data[,-which(names(adult.data) == "y")] # All covariates (removed the response from the data frame).
@@ -221,7 +186,7 @@ generate <- function(h, K = 100){ # Use K from above as standard. K = 10000 is u
 # Here we say that we want to explain predictions that are predicted as 0 (less than 50k a year). We want to find out what we need to change to change
 # this prediction into 1. This is done in the post-processing after generating all the possible counterfactuals. According to the experiments in the article
 # we only generate one counterfactual per factual, for the first 100 undesirable observations we want to explain.
-preds <- prediction_model(test, method = "logreg") # Fungerer ikke med ANN!!
+preds <- prediction_model(test, method = "ANN") # Fungerer ikke med ANN!!
 #preds_sorted <- sort(preds, decreasing = F, index.return = T) # Vil tro det kanskje ikke er dette de er på jakt etter!?
 #preds_sorted_values <- preds_sorted$x[1:10] # Skal egentlig ha de 100 første! Gjør dette for testing nå!
 #preds_sorted_indices <- preds_sorted$ix[1:10]
@@ -270,7 +235,7 @@ fulfill_crit3 <- function(D_h_pp, c = 0.5, pred.method = "logreg"){
   D_h_pp
 }
 
-crit3_D_h_per_point <- fulfill_crit3(D_h_pp = D_h_per_point, pred.method = "logreg") # Fullfil criterion 3 for all (unique) generated possible counterfactuals. 
+crit3_D_h_per_point <- fulfill_crit3(D_h_pp = D_h_per_point, pred.method = "ANN") # Fullfil criterion 3 for all (unique) generated possible counterfactuals. 
 
 ##### fulfilling criterion 4.
 # Calculate Sparsity and Gower's distance for each D_h (per point).

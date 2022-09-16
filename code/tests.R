@@ -3,9 +3,10 @@
 # functions are working as they should.
 
 rm(list = ls()) # make sure to remove previously loaded variables into the Session.
+setwd("/home/ajo/gitRepos/project")
 
 # Source the utility functions we are testing.
-source("utilities.R")
+source("code/utilities.R")
 
 # Load the data we need for the testing.
 load("adult_data_binarized.RData", verbose = T)
