@@ -21,12 +21,24 @@ library(caret) # For confusion matrix.
 # Source some of the needed code. 
 source("code/utilities.R")
 
+# Get command line arguments.
+CLI.args <- take.arguments()
+# Arguments: method, length(H), K, generate (TRUE) or load (FALSE), binarized data (TRUE) or not (FALSE)
+for (i in CLI.args){
+  print(i)
+}
+
 ########################################### Build ML models for classification: which individuals obtain an income more than 50k yearly?
 set.seed(42) # Set seed to begin with!
 
 # Load the data we want first. Loading and cleaning the original data is done in separate files. 
-load("data/adult_data_binarized.RData", verbose = T)
-#load("adult_data_categ.RData", verbose = T) # For when I want to do experiment with all categories intact. 
+if (CLI.args[5]){
+  load("data/adult_data_binarized.RData", verbose = T) # Binarized factors in the data. 
+} else if (CLI.args[5] != T){
+  load("adult_data_categ.RData", verbose = T) # Categorical factors as they come originally. 
+} else {
+  stop("Please supply either T (binarized data) of F (categorical data) as the fift CLI argument.")
+}
 
 # List of continuous variables.
 cont <- c("age","fnlwgt","education_num","capital_gain","capital_loss","hours_per_week")
@@ -38,11 +50,16 @@ adult.data <- adult.data.normalized[[1]] # we are only interested in the data fo
 
 # Make train and test data.
 train_and_test_data <- make.train.and.test(data = adult.data) # The function returns two matrices (x) and two vectors (y). 
+# In addition, it returns two dataframes that are the original dataframe split into train and test (containing y's and x's).
 summary(train_and_test_data) # Returned list. 
 x_train <- train_and_test_data[[1]]
 y_train <- train_and_test_data[[2]]
 x_test <- train_and_test_data[[3]]
 y_test <- train_and_test_data[[4]]
+
+# These two are used when I want to make dataframes later, in order to easier keep all correct datatypes in the columns. 
+train <- train_and_test_data[[5]]
+test <- train_and_test_data[[6]]
 
 # Fit ANN.
 ANN <- fit.ANN(x_train, y_train, x_test, y_test)
@@ -52,10 +69,10 @@ logreg <- fit.logreg(x_train, y_train, x_test, y_test)
 
 
 # This is used to return the predicted probabilities according to the model we want to use (for later).
-prediction_model <- function(x_test, y_test, method){
+prediction_model <- function(x_test, method){
   # This returns the predicted probabilities of class 1 (>= 50k per year).
   if (method == "logreg"){
-    return(predict(logreg, data.frame(cbind(x_test, "y" = y_test)), type = "response")) 
+    return(predict(logreg, data.frame(x_test), type = "response")) # Could also simply have used "test" here. 
   } else if (method == "ANN"){
     return(as.numeric(ANN %>% predict(x_test)))
   } else {
@@ -64,8 +81,8 @@ prediction_model <- function(x_test, y_test, method){
 }
 
 # Predictions from each of the two models (just for show).
-d <- data.frame("logreg" = prediction_model(x_test, y_test, method = "logreg"), 
-                "ANN" = prediction_model(x_test, y_test, method = "ANN"))
+d <- data.frame("logreg" = prediction_model(x_test, method = "logreg"), 
+                "ANN" = prediction_model(x_test, method = "ANN"))
 
 head(d, 20) # The predictions look relatively similar with the two methods. 
 tail(d, 20) # There are a few differences, but not many. 
@@ -73,7 +90,6 @@ tail(d, 20) # There are a few differences, but not many.
 ############################################ This is where the generation algorithm begins. 
 data_min_response <- adult.data[,-which(names(adult.data) == "y")] # All covariates (removed the response from the data frame).
 
-K <- 100 # Number of returned possible counterfactuals before pre-processing.
 fixed_features <- c("age", "sex") # Names of fixed features from the data. 
 mut_features <- base::setdiff(colnames(data_min_response), fixed_features) # Names of mutable features from the data.
 mut_datatypes <- sapply(data_min_response[mut_features], class)
@@ -186,42 +202,52 @@ generate <- function(h, K){ # K = 10000 is used in the article for the experimen
 # Here we say that we want to explain predictions that are predicted as 0 (less than 50k a year). We want to find out what we need to change to change
 # this prediction into 1. This is done in the post-processing after generating all the possible counterfactuals. According to the experiments in the article
 # we only generate one counterfactual per factual, for the first 100 undesirable observations we want to explain.
-preds <- prediction_model(x_test, y_test, method = "ANN") 
+if (CLI.args[1] %in% c("ANN", "logreg")){
+  preds <- prediction_model(x_test, method = CLI.args[1]) 
+} else {
+  stop("Please supply either 'ANN' or 'logreg' as the first CLI argument.")
+}
+
 #preds_sorted <- sort(preds, decreasing = F, index.return = T) # Vil tro det kanskje ikke er dette de er på jakt etter!?
 #preds_sorted_values <- preds_sorted$x[1:10] # Skal egentlig ha de 100 første! Gjør dette for testing nå!
 #preds_sorted_indices <- preds_sorted$ix[1:10]
 #new_predicted_data <- cbind(test[preds_sorted_indices,colnames(adult.data)], "y_pred" = preds_sorted_values)
-new_predicted_data <- data.frame(cbind(cbind(x_test, "y" = y_test)[,colnames(adult.data)], "y_pred" = preds)) # Vil datatypen her bli et problem?
-# new_predicted_data <- cbind(data.frame(cbind(x_test, "y" = y_test))[,colnames(adult.data)], "y_pred" = preds)
+new_predicted_data <- data.frame(cbind(test[,colnames(adult.data)], "y_pred" = preds)) 
 H <- new_predicted_data[new_predicted_data$y_pred < 0.5, ] 
-H <- H[1:20,-which(names(new_predicted_data) %in% c("y_pred","y"))] # Prøver bare med de 10 første foreløpig.
+H <- H[1:(CLI.args[2]),-which(names(new_predicted_data) %in% c("y_pred","y"))] # Prøver bare med de 10 første foreløpig.
 # We select the 100 test observations with the lowest predicted probability? Perhaps this is not what they mean by 
 # "the first 100 observations with an undesirable prediction"? 
 # I have gone away from this for now!
 # The code has been left here though, since I could probably discuss this in the report!
 
+K <- as.numeric(CLI.args[3]) # Assume that the third command line input is an integer. 
+
 # Generation of counterfactuals for each point, before post-processing.
-generate_counterfact_for_H <- function(H_l){
+generate_counterfact_for_H <- function(H_l, K.num){
   D_h_per_point <- list()
   for (i in 1:nrow(H_l)){
     # x_h is a factual. 
     x_h <- H_l[i,]
-    D_h_per_point[[i]] <- generate(x_h, K = 500) # I artikkelen hadde de 10000.
+    D_h_per_point[[i]] <- generate(x_h, K = K.num) # I artikkelen hadde de 10000.
     cat("Generated for point ",i,"\n")
   }
   D_h_per_point
 }
 
-#D_h_per_point <- generate_counterfact_for_H(H_l = H) # Generate the matrix D_h for each factual we want to explain (in H)
-#save(D_h_per_point, file = "results/H20K500.RData") # Save the generated D_h per point with K = 100 for the first 100 undesirable predictions.
-load("results/H20K500.RData", verbose = T)
-
+# Use CLI.args to make the name of the file automatically.
+filename_generation <- paste(CLI.args[1],"_H",CLI.args[2],"_K",CLI.args[3],"_bin",CLI.args[5], sep="") 
+if (CLI.args[4]){
+  D_h_per_point <- generate_counterfact_for_H(H_l = H, K) # Generate the matrix D_h for each factual we want to explain (in H)
+  save(D_h_per_point, file = paste("results/D_hs/",filename_generation,".RData",sep="")) # Save the generated D_h per point.
+} else if (CLI.args[4] != T){
+  load(paste("results/D_hs/",filename_generation,".RData",sep=""), verbose = T)
+}
 
 ######################################## Post-processing.
 # Remove the rows of D_h (per point) not satisfying the listed criteria. 
 
 fulfill_crit3_D_h <- function(D_h, c, pred.method){
-  D_h_crit3 <- D_h[prediction_model(D_h, method = pred.method) >= c,] # prediction_model(*) is the R function that predicts 
+  D_h_crit3 <- D_h[prediction_model(data.matrix(D_h), method = pred.method) >= c,] # prediction_model(*) is the R function that predicts 
   # according to the model we want to make explanations for. 
   # We can see that many rows are the same. The duplicates are removed below. 
   unique_D_h <- unique(D_h_crit3)
@@ -229,7 +255,7 @@ fulfill_crit3_D_h <- function(D_h, c, pred.method){
 }
 
 # Fulfill criterion 3.
-fulfill_crit3 <- function(D_h_pp, c = 0.5, pred.method = "logreg"){
+fulfill_crit3 <- function(D_h_pp, c, pred.method){
   for (i in 1:length(D_h_pp)){
     D_h <- D_h_pp[[i]]
     D_h_pp[[i]] <- fulfill_crit3_D_h(D_h, c, pred.method)
@@ -237,7 +263,7 @@ fulfill_crit3 <- function(D_h_pp, c = 0.5, pred.method = "logreg"){
   D_h_pp
 }
 
-crit3_D_h_per_point <- fulfill_crit3(D_h_pp = D_h_per_point, pred.method = "ANN") # Fullfil criterion 3 for all (unique) generated possible counterfactuals. 
+crit3_D_h_per_point <- fulfill_crit3(D_h_pp = D_h_per_point, c = 0.5, pred.method = CLI.args[1]) # Fullfil criterion 3 for all (unique) generated possible counterfactuals. 
 
 ##### fulfilling criterion 4.
 # Calculate Sparsity and Gower's distance for each D_h (per point).
@@ -369,7 +395,7 @@ violate <- function(){
   
   # Success: if the counterfactual produces a positive predictive response.
   # This is 1 inherently, from the post-processing step done above (where we only keep the rows in D_h that have positive predictive response).
-  prediction_model(unique_D_h, method = "ANN") # As we can see, success = 1 for these counterfactuals. 
+  prediction_model(unique_D_h, method = CLI.args[1]) # As we can see, success = 1 for these counterfactuals. 
   
 }
 
@@ -393,5 +419,5 @@ for (i in 1:length(final_counterfactuals)){
 
 exp1_MCCE <- data.frame("L0" = mean(L0s), "L2" = mean(L2s), "N_CE" = sum(N_CEs))
 knitr::kable(exp1_MCCE)
-write.csv(exp1_MCCE, file = "results/resulting_metrics_ANN.csv")
-save(D_h_per_point, file = "results/final_counterfactuals_ANN.RData")
+write.csv(exp1_MCCE, file = paste("results/resulting_metrics_", filename_generation, ".csv", sep = ""))
+save(D_h_per_point, file = paste("results/final_counterfactuals_", filename_generation, ".RData", sep = ""))

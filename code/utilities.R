@@ -1,5 +1,15 @@
 # Utility functions are placed here. Then they are source into the main algorithm file. 
 
+take.arguments <- function(){
+  args <- commandArgs(trailingOnly = T)
+  if (length(args) != 5){
+    print("Default arguments are used")
+            # method, length(H), K, generate (TRUE) or load (FALSE), binarized data (TRUE) or not (FALSE)
+    args <- c("ANN",20,500,F,T)
+  } 
+  return(args)
+}
+
 normalize <- function(x){
   # Normalize the vector x. 
   return((x- min(x))/(max(x)-min(x)))
@@ -43,7 +53,8 @@ make.train.and.test <- function(data, train.ratio = 2/3){
   y_train <- train[,c("y")] # Training label.
   x_test <- data.matrix(test[,-which(names(test) == "y")]) # Testing covariates. 
   y_test <- test[,c("y")] # Testing label.
-  return(list("x_train" = x_train, "y_train" = y_train, "x_test" = x_test, "y_test" = y_test))
+  return(list("x_train" = x_train, "y_train" = y_train, "x_test" = x_test, "y_test" = y_test, 
+              "train" = train, "test" = test))
 }
 
 fit.ANN <- function(x_train, y_train, x_test, y_test){
@@ -86,7 +97,7 @@ fit.logreg <- function(x_train, y_train, x_test, y_test){
   # Fit the logreg and return the logreg-object. 
   lin_mod <- glm(y ~ ., family=binomial(link='logit'), data=data.frame(cbind(x_train, "y" = y_train)))
   print(summary(lin_mod))
-  y_pred_logreg <- predict(lin_mod, data.frame(cbind(x_test, "y" = y_test)), type = "response")
+  y_pred_logreg <- predict(lin_mod, data.frame(x_test), type = "response")
   y_pred_logreg[y_pred_logreg >= 0.5] <- 1
   y_pred_logreg[y_pred_logreg < 0.5] <- 0
   print(confusionMatrix(factor(y_pred_logreg), factor(y_test)))
