@@ -138,7 +138,7 @@ plot_tree(12)
 
 ############################### Generate counterfactuals based on trees etc. 
 # Generate counterfactual per sample. 
-generate <- function(h, K = 100){ # Use K from above as standard. K = 10000 is used in the article for the experiments.
+generate <- function(h, K){ # K = 10000 is used in the article for the experiments.
   # Instantiate entire D_h-matrix for all features. 
   D_h <- as.data.frame(matrix(data = rep(NA, K*p), nrow = K, ncol = p))
   colnames(D_h) <- c(fixed_features, mut_features)
@@ -186,20 +186,22 @@ generate <- function(h, K = 100){ # Use K from above as standard. K = 10000 is u
 # Here we say that we want to explain predictions that are predicted as 0 (less than 50k a year). We want to find out what we need to change to change
 # this prediction into 1. This is done in the post-processing after generating all the possible counterfactuals. According to the experiments in the article
 # we only generate one counterfactual per factual, for the first 100 undesirable observations we want to explain.
-preds <- prediction_model(test, method = "ANN") # Fungerer ikke med ANN!!
+preds <- prediction_model(x_test, y_test, method = "ANN") 
 #preds_sorted <- sort(preds, decreasing = F, index.return = T) # Vil tro det kanskje ikke er dette de er på jakt etter!?
 #preds_sorted_values <- preds_sorted$x[1:10] # Skal egentlig ha de 100 første! Gjør dette for testing nå!
 #preds_sorted_indices <- preds_sorted$ix[1:10]
 #new_predicted_data <- cbind(test[preds_sorted_indices,colnames(adult.data)], "y_pred" = preds_sorted_values)
-new_predicted_data <- cbind(test[,colnames(adult.data)], "y_pred" = preds)
+new_predicted_data <- data.frame(cbind(cbind(x_test, "y" = y_test)[,colnames(adult.data)], "y_pred" = preds)) # Vil datatypen her bli et problem?
+# new_predicted_data <- cbind(data.frame(cbind(x_test, "y" = y_test))[,colnames(adult.data)], "y_pred" = preds)
 H <- new_predicted_data[new_predicted_data$y_pred < 0.5, ] 
 H <- H[1:20,-which(names(new_predicted_data) %in% c("y_pred","y"))] # Prøver bare med de 10 første foreløpig.
 # We select the 100 test observations with the lowest predicted probability? Perhaps this is not what they mean by 
 # "the first 100 observations with an undesirable prediction"? 
 # I have gone away from this for now!
+# The code has been left here though, since I could probably discuss this in the report!
 
 # Generation of counterfactuals for each point, before post-processing.
-generate_counterfact_for_H <- function(H_l = H){
+generate_counterfact_for_H <- function(H_l){
   D_h_per_point <- list()
   for (i in 1:nrow(H_l)){
     # x_h is a factual. 
@@ -210,9 +212,9 @@ generate_counterfact_for_H <- function(H_l = H){
   D_h_per_point
 }
 
-#D_h_per_point <- generate_counterfact_for_H() # Generate the matrix D_h for each factual we want to explain (in H)
-#save(D_h_per_point, file = "H20K500.RData") # Save the generated D_h per point with K = 100 for the first 100 undesirable predictions.
-load("H20K500.RData", verbose = T)
+#D_h_per_point <- generate_counterfact_for_H(H_l = H) # Generate the matrix D_h for each factual we want to explain (in H)
+#save(D_h_per_point, file = "results/H20K500.RData") # Save the generated D_h per point with K = 100 for the first 100 undesirable predictions.
+load("results/H20K500.RData", verbose = T)
 
 
 ######################################## Post-processing.
@@ -391,5 +393,5 @@ for (i in 1:length(final_counterfactuals)){
 
 exp1_MCCE <- data.frame("L0" = mean(L0s), "L2" = mean(L2s), "N_CE" = sum(N_CEs))
 knitr::kable(exp1_MCCE)
-write.csv(exp1_MCCE, file = "resulting_metrics.csv")
-save(D_h_per_point, file = "final_counterfactuals.RData")
+write.csv(exp1_MCCE, file = "results/resulting_metrics_ANN.csv")
+save(D_h_per_point, file = "results/final_counterfactuals_ANN.RData")
