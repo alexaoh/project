@@ -419,4 +419,4 @@ for (i in 1:length(final_counterfactuals)){
 exp1_MCCE <- data.frame("L0" = mean(L0s), "L2" = mean(L2s), "N_CE" = sum(N_CEs))
 knitr::kable(exp1_MCCE)
 write.csv(exp1_MCCE, file = paste("results/resulting_metrics_", filename_generation, ".csv", sep = ""))
-save(D_h_per_point, file = paste("results/final_counterfactuals_", filename_generation, ".RData", sep = ""))
+save(final_counterfactuals, file = paste("results/final_counterfactuals_", filename_generation, ".RData", sep = ""))
