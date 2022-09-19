@@ -35,7 +35,7 @@ set.seed(42) # Set seed to begin with!
 if (CLI.args[5]){
   load("data/adult_data_binarized.RData", verbose = T) # Binarized factors in the data. 
 } else if (CLI.args[5] != T){
-  load("adult_data_categ.RData", verbose = T) # Categorical factors as they come originally. 
+  load("data/adult_data_categ.RData", verbose = T) # Categorical factors as they come originally. 
 } else {
   stop("Please supply either T (binarized data) of F (categorical data) as the fift CLI argument.")
 }
@@ -62,11 +62,11 @@ train <- train_and_test_data[[5]]
 test <- train_and_test_data[[6]]
 
 # Fit ANN.
-ANN <- fit.ANN(x_train, y_train, x_test, y_test)
+ANN <- fit.ANN(data.matrix(x_train), y_train, data.matrix(x_test), y_test)
+# Need to figure out how to implement the ANN with categorical features!
 
 # Fit logreg.
 logreg <- fit.logreg(x_train, y_train, x_test, y_test)
-
 
 # This is used to return the predicted probabilities according to the model we want to use (for later).
 prediction_model <- function(x_test, method){
@@ -74,7 +74,7 @@ prediction_model <- function(x_test, method){
   if (method == "logreg"){
     return(predict(logreg, data.frame(x_test), type = "response")) # Could also simply have used "test" here. 
   } else if (method == "ANN"){
-    return(as.numeric(ANN %>% predict(x_test)))
+    return(as.numeric(ANN %>% predict(data.matrix(x_test))))
   } else {
     stop("Methods 'logreg' and 'ANN' are the only two implemented thus far")
   }
@@ -82,7 +82,7 @@ prediction_model <- function(x_test, method){
 
 # Predictions from each of the two models (just for show).
 d <- data.frame("logreg" = prediction_model(x_test, method = "logreg"), 
-                "ANN" = prediction_model(x_test, method = "ANN"))
+                "ANN" = prediction_model(data.matrix(x_test), method = "ANN"))
 
 head(d, 20) # The predictions look relatively similar with the two methods. 
 tail(d, 20) # There are a few differences, but not many. 
@@ -230,7 +230,7 @@ generate_counterfact_for_H <- function(H_l, K.num){
     D_h_per_point[[i]] <- generate(x_h, K = K.num) # I artikkelen hadde de 10000.
     cat("Generated for point ",i,"\n")
   }
-  D_h_per_point
+  return(D_h_per_point)
 }
 
 # Use CLI.args to make the name of the file automatically.
@@ -243,112 +243,50 @@ if (CLI.args[4]){
 }
 
 ######################################## Post-processing.
-# Remove the rows of D_h (per point) not satisfying the listed criteria. 
 
-fulfill_crit3_D_h <- function(D_h, c, pred.method){
-  D_h_crit3 <- D_h[prediction_model(data.matrix(D_h), method = pred.method) >= c,] # prediction_model(*) is the R function that predicts 
-  # according to the model we want to make explanations for. 
-  # We can see that many rows are the same. The duplicates are removed below. 
-  unique_D_h <- unique(D_h_crit3)
-  return(unique_D_h)
-}
-
-# Fulfill criterion 3.
-fulfill_crit3 <- function(D_h_pp, c, pred.method){
-  for (i in 1:length(D_h_pp)){
-    D_h <- D_h_pp[[i]]
-    D_h_pp[[i]] <- fulfill_crit3_D_h(D_h, c, pred.method)
-  }
-  D_h_pp
-}
-
-crit3_D_h_per_point <- fulfill_crit3(D_h_pp = D_h_per_point, c = 0.5, pred.method = CLI.args[1]) # Fullfil criterion 3 for all (unique) generated possible counterfactuals. 
-
-##### fulfilling criterion 4.
-# Calculate Sparsity and Gower's distance for each D_h (per point).
-
-# Calculate Sparsity first: Number of features changed between x_h and the counterfactual.
-sparsity_D_h <- function(x_h,D_h){
-  # Calculates sparsity for one counterfactual x_h.
-  D_h$sparsity <- rep(NA, nrow(D_h))
-  if (nrow(D_h) >= 1){
-    for (i in 1:nrow(D_h)){
-      D_h[i,"sparsity"] <- sum(x_h != D_h[i,-ncol(D_h)]) # We remove the last column, which is D_h$sparsity!
-    }
-  }
-  return(D_h)
-}
-
-sparsity_D_h_all_points <- function(D_h_pp, H_l){
-  # Calculates sparsity for all counterfactuals and adds the column to each respective D_h.
-  for (i in 1:length(D_h_pp)){
-    D_h_pp[[i]] <- sparsity_D_h(H_l[i,], D_h_pp[[i]])
-  }
-  return(D_h_pp)
-}
-
-# Testing for sparsity, seems to work fine!
-sparsity_D_h(H[2,],crit3_D_h_per_point[[2]])
-sparsity_D_h(H[1,],crit3_D_h_per_point[[1]])
-sparsity_D_h(H[3,],crit3_D_h_per_point[[3]])
-sparsity_D_h(H[4,],crit3_D_h_per_point[[4]])
-
-spars_D_h_per_point <- sparsity_D_h_all_points(crit3_D_h_per_point,H)
-spars_D_h_per_point[[2]]
-spars_D_h_per_point[[1]]
-spars_D_h_per_point[[3]]
-spars_D_h_per_point[[4]]
-
-gower_D_h <- function(x_h, D_h){
-  # Calculates Gower's distance for one counterfactual x_h.
-  library(gower) # Could try to use this package instead of calculating everything by hand below!
-  D_h$gower <- rep(NA, nrow(D_h))
-  D_h$gowerpack <- rep(NA, nrow(D_h)) # Result from package.
-  dtypes <- sapply(x_h[colnames(x_h)], class)
+post.processing <- function(D_h, H){
+  # Remove the rows of D_h (per point) not satisfying the listed criteria. 
   
-  if (nrow(D_h) >= 1){
-    for (i in 1:nrow(D_h)){
-      g <- 0 # Sum for Gower's distance.
-      p <- ncol(x_h)
-      
-      for (j in 1:p){ # Assuming that the features are already normalized! Perhaps they need to be normalized again!?
-        d_j <- D_h[i,j]
-        if (dtypes[j] == "numeric"){
-          R_j <- 1 # normalization factor, see not in line above.
-          g <- g + 1/R_j*abs(d_j-x_h[,j])
-        } else if (dtypes[j] == "factor"){
-          if (x_h[,j] != d_j){
-            g <- g + 1
-          }
-        }
-      }
-      # Disse to er ulike!! Finn ut hvorfor!? Noe med normaliseringen jeg nevner ovenfor å gjøre?
-      # Det kommer en warning om "zero or non-finite range" ved bruke av pakken!
-      # Kanskje jeg bare skal sjekke at det gir mening det jeg har gjort manuelt først!
-      D_h[i,"gower"] <- g/p
-      #D_h[i,"gowerpack"] <- gower_dist(x_h,D_h[i,colnames(x_h)])
+  fulfill_crit3_D_h <- function(D_h, c, pred.method){
+    D_h_crit3 <- D_h[prediction_model(D_h, method = pred.method) >= c,] # prediction_model(*) is the R function that predicts 
+    # according to the model we want to make explanations for. 
+    # We can see that many rows are the same. The duplicates are removed below. 
+    unique_D_h <- unique(D_h_crit3)
+    return(unique_D_h)
+  }
+  
+  # Fulfill criterion 3.
+  fulfill_crit3 <- function(D_h_pp, c, pred.method){
+    for (i in 1:length(D_h_pp)){
+      D_h <- D_h_pp[[i]]
+      D_h_pp[[i]] <- fulfill_crit3_D_h(D_h, c, pred.method)
     }
+    return(D_h_pp)
   }
-  return(D_h)
+
+  ##### Fulfilling criterion 4.
+  # Calculate Sparsity and Gower's distance for each D_h (per point).
+  
+  add_metrics_D_h_all_points <- function(D_h_pp, H_l){
+    # Calculates sparsity and Gower for all counterfactuals and adds the columns to each respective D_h.
+    for (i in 1:length(D_h_pp)){
+      D_h_pp[[i]] <- gower_D_h(H_l[i,], D_h_pp[[i]])
+      D_h_pp[[i]] <- sparsity_D_h(H_l[i,], D_h_pp[[i]])
+    }
+    return(D_h_pp)
+  }
+  
+  # Remove non-valid counterfactuals (those that don't change the prediction).
+  crit3_D_h_per_point <- fulfill_crit3(D_h_pp = D_h, c = 0.5, pred.method = CLI.args[1]) # Fulfill criterion 3 for all (unique) generated possible counterfactuals. 
+  
+  # Add sparsity and Gower distance to each row. 
+  crit4_D_h_all_points <- add_metrics_D_h_all_points(crit3_D_h_per_point,H)
+  return(crit4_D_h_all_points) # Return D_h with Gower and sparsity added as columns. Also, non-valid counterfactuals are removed. 
 }
 
-gower_D_h_all_points <- function(D_h_pp, H_l){
-  # Calculates Gower's distance for all counterfactuals and adds the column to each respective D_h.
-  for (i in 1:length(D_h_pp)){
-    D_h_pp[[i]] <- gower_D_h(H_l[i,], D_h_pp[[i]])
-  }
-  return(D_h_pp)
-}
+D_h_post_processed <- post.processing(D_h_per_point, H)
 
-# Tester Gower's distance om det virker korrekt i implementasjonen. Virker som at denne delen av implementasjonen er god!
-gower_D_h(H[1,],spars_D_h_per_point[[1]])
-gower_D_h(H[2,],spars_D_h_per_point[[2]])
-
-crit4_D_h_all_points <- gower_D_h_all_points(D_h_pp = spars_D_h_per_point, H_l = H)
-crit4_D_h_all_points[[1]]
-crit4_D_h_all_points[[2]]
-all.equal(crit4_D_h_all_points[[2]],gower_D_h(H[2,],spars_D_h_per_point[[2]]))
-
+############# Do we want several counterfactuals per factual or only one? Below we select one!
 generate_one_counterfactual_D_h <- function(D_h){
   # Generate one counterfactual for one factual, i.e. reduce the corresponding D_h to 1 row.
   if (nrow(D_h) >= 1){
@@ -378,7 +316,8 @@ generate_one_counterfactual_all_points <- function(D_h_pp){
   return(D_h_pp)
 }
 
-final_counterfactuals <- generate_one_counterfactual_all_points(crit4_D_h_all_points)
+
+final_counterfactuals <- generate_one_counterfactual_all_points(D_h_post_processed)
 
 ########################### Performance metrics. All these should be calculated on "final_counterfactuals"!
 # Violation: Number of actionability constraints violated by the counterfactual. 
@@ -398,9 +337,9 @@ violate <- function(){
   
 }
 
+############################## Experiments. 
 # Experiment 1:
-# Averages of all the metrics calculated and added to unique_D_h
-# Prøver kun med logreg nå!
+# Averages of all the metrics calculated and added to unique_D_h.
 
 L0s <- c()
 L2s <- c()
@@ -414,7 +353,6 @@ for (i in 1:length(final_counterfactuals)){
     L2s <- c(L2s,l$gower)
   } 
 }
-
 
 exp1_MCCE <- data.frame("L0" = mean(L0s), "L2" = mean(L2s), "N_CE" = sum(N_CEs))
 knitr::kable(exp1_MCCE)

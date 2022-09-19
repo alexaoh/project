@@ -3,8 +3,8 @@ library(dplyr)
 setwd("/home/ajo/gitRepos/project")
 
 ###################################### Loading and cleaning the Adult data.
-data1 <- read.csv("adult.data", header = F) 
-data2 <- read.csv("adult.test", header = F) 
+data1 <- read.csv("original_data/adult.data", header = F) 
+data2 <- read.csv("original_data/adult.test", header = F) 
 colnames(data1) <- colnames(data2) <- c("age","workclass","fnlwgt","education","education_num",
                      "marital_status","occupation","relationship","race","sex",
                      "capital_gain","capital_loss","hours_per_week","native_country", "y")
@@ -30,6 +30,6 @@ adult.data$relationship <- as.factor(adult.data$relationship)
 adult.data$race <- as.factor(adult.data$race)
 adult.data$native_country <- as.factor(adult.data$native_country)
 
-save(adult.data, file = "adult_data_categ.RData") # Save the dataset including all factors etc.
+save(adult.data, file = "data/adult_data_categ.RData") # Save the dataset including all factors etc.
 
 summary(adult.data)

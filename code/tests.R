@@ -33,8 +33,16 @@ test_normalization_and_denormalization <- function(){
 }
 
 
-
+test_gower_distance <- function(){
+  norm.data <- normalize.data(data = adult.data, continuous_vars = cont)[[1]]
+  x <- norm.data[1,-ncol(norm.data)]
+  y <- norm.data[2,-ncol(norm.data)]
+  g1 <- gower_D_h(x,y)["gower"] # The correct answer is 0.1751324 --> Good!
+  g2 <- gower::gower_dist(x,y) # Not sure why this gives a difference answer? What features is it skipping all the time?
+}
 
 
 ##################### Run the tests.
 cat("Normalization and de-normalization returns the same data: ", test_normalization_and_denormalization(), "\n")
+
+test_gower_distance()

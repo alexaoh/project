@@ -1,15 +1,18 @@
 # Utility functions are placed here. Then they are source into the main algorithm file. 
 
 take.arguments <- function(){
+  # Take command line arguments into the main algorithm file. This is done for easier simulation on remote machine.
   args <- commandArgs(trailingOnly = T)
   if (length(args) != 5){
     print("Default arguments are used")
             # method, length(H), K, generate (TRUE) or load (FALSE), binarized data (TRUE) or not (FALSE)
-    args <- c("ANN",20,500,F,T)
+    args <- c("ANN",100,10000,FALSE,TRUE)
   } 
   return(args)
 }
 
+
+########################## Data processing tools. 
 normalize <- function(x){
   # Normalize the vector x. 
   return((x- min(x))/(max(x)-min(x)))
@@ -49,14 +52,16 @@ make.train.and.test <- function(data, train.ratio = 2/3){
   train <- data[train.indices, ]
   test <- data[-train.indices, ]
   
-  x_train <- data.matrix(train[,-which(names(train) == "y")]) # Training covariates. 
+  x_train <- train[,-which(names(train) == "y")] # Training covariates. 
   y_train <- train[,c("y")] # Training label.
-  x_test <- data.matrix(test[,-which(names(test) == "y")]) # Testing covariates. 
+  x_test <- test[,-which(names(test) == "y")] # Testing covariates. 
   y_test <- test[,c("y")] # Testing label.
   return(list("x_train" = x_train, "y_train" = y_train, "x_test" = x_test, "y_test" = y_test, 
               "train" = train, "test" = test))
 }
 
+
+######################## Fit prediction models.
 fit.ANN <- function(x_train, y_train, x_test, y_test){
   # Fit the ANN and return the keras object for the ANN.
   
@@ -105,3 +110,47 @@ fit.logreg <- function(x_train, y_train, x_test, y_test){
   return(lin_mod)
 }
 
+############################ Tools for post-processing of possible counterfactuals.
+sparsity_D_h <- function(x_h,D_h){
+  # Calculates sparsity for one counterfactual x_h; "Number of features changed between x_h and the counterfactual".
+  D_h$sparsity <- rep(NA, nrow(D_h))
+  if (nrow(D_h) >= 1){
+    for (i in 1:nrow(D_h)){
+      D_h[i,"sparsity"] <- sum(x_h != D_h[i,-which(names(D_h) %in% c("sparsity","gower","gowerpack"))]) # We remove newly added columns.
+    }
+  }
+  return(D_h)
+}
+
+gower_D_h <- function(x_h, D_h){
+  # Calculates Gower's distance for one counterfactual x_h.
+  library(gower) # Could try to use this package instead of calculating everything by hand below!
+  D_h$gower <- rep(NA, nrow(D_h))
+  D_h$gowerpack <- rep(NA, nrow(D_h)) # Result from package.
+  dtypes <- sapply(x_h[colnames(x_h)], class)
+  
+  if (nrow(D_h) >= 1){
+    for (i in 1:nrow(D_h)){
+      g <- 0 # Sum for Gower distance.
+      p <- ncol(x_h)
+      
+      for (j in 1:p){ # Assuming that the features are already normalized! Perhaps they need to be normalized again!?
+        d_j <- D_h[i,j]
+        if (dtypes[j] == "numeric"){
+          R_j <- 1 # normalization factor, see note in line above.
+          g <- g + 1/R_j*abs(d_j-x_h[,j])
+        } else if (dtypes[j] == "factor"){
+          if (x_h[,j] != d_j){
+            g <- g + 1
+          }
+        }
+      }
+      # Disse to er ulike!! Finn ut hvorfor!? Noe med normaliseringen jeg nevner ovenfor å gjøre?
+      # Det kommer en warning om "zero or non-finite range" ved bruke av pakken!
+      # Kanskje jeg bare skal sjekke at det gir mening det jeg har gjort manuelt først!
+      D_h[i,"gower"] <- g/p
+      #D_h[i,"gowerpack"] <- gower_dist(x_h,D_h[i,colnames(x_h)])
+    }
+  }
+  return(D_h)
+}

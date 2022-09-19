@@ -4,8 +4,8 @@ setwd("/home/ajo/gitRepos/project")
 set.seed(42) # Set seed to begin with!
 
 ###################################### Loading and cleaning the Adult data.
-data1 <- read.csv("adult.data", header = F) 
-data2 <- read.csv("adult.test", header = F) 
+data1 <- read.csv("original_data/adult.data", header = F) 
+data2 <- read.csv("original_data/adult.test", header = F) 
 colnames(data1) <- colnames(data2) <- c("age","workclass","fnlwgt","education","education_num",
                      "marital_status","occupation","relationship","race","sex",
                      "capital_gain","capital_loss","hours_per_week","native_country", "y")
@@ -51,6 +51,6 @@ adult.data$race <- binarize(adult.data$race)
 adult.data$native_country <- binarize(adult.data$native_country)
 
 # write.csv(adult.data, file = "adult_data_binarized.csv", row.names = F)
-save(adult.data, file = "adult_data_binarized.RData") # Save the dataset including all factors etc.
+save(adult.data, file = "data/adult_data_binarized.RData") # Save the dataset including all factors etc.
 
 summary(adult.data)
