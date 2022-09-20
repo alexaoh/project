@@ -10,13 +10,14 @@
 rm(list = ls())  # make sure to remove previously loaded variables into the Session.
 
 setwd("/home/ajo/gitRepos/project")
-library(tree) # For regression trees. This is not needed anymore I believe. 
+#library(tree) # For regression trees. This is not needed anymore I believe. 
 library(rpart) # Try this for building CART trees instead!
 library(rpart.plot) # For plotting rpart trees in a more fancy way.
 library(dplyr)
 library(keras) # for deep learning models. 
 library(pROC) # For ROC curve.
 library(caret) # For confusion matrix.
+library(randomForest) # For Random Forest. 
 
 # Source some of the needed code. 
 source("code/utilities.R")
@@ -27,6 +28,9 @@ CLI.args <- take.arguments()
 for (i in CLI.args){
   print(i)
 }
+
+# This is just for testing now, needs to be removed later!!!!
+CLI.args <- c("ANN",20,500,FALSE,TRUE)
 
 ########################################### Build ML models for classification: which individuals obtain an income more than 50k yearly?
 set.seed(42) # Set seed to begin with!
@@ -47,45 +51,82 @@ adult.data.normalized <- normalize.data(data = adult.data, continuous_vars = con
 summary(adult.data.normalized)
 adult.data <- adult.data.normalized[[1]] # we are only interested in the data for now. 
 
+if (CLI.args[1] == "ANN"){
+  adult.data.onehot <- data.frame(adult.data) # make a copy of the dataframe for one hot encoding in ANN.
+  tracemem(adult.data) == tracemem(adult.data.onehot) # it is a deep copy.
+  data.table::address(adult.data)
+  data.table::address(adult.data.onehot)
+  # The memory addresses are different. 
+  
+  # One-hot encode the data if we are fitting an ANN. Otherwise we simply keep the same data as earlier. 
+  adult.data.onehot <- as.data.frame(model.matrix(~.,data = adult.data.onehot)) # We keep the intercept in the encoding.
+  # Is this encoding with the intercept correct? Perhaps I should use contrasts.arg = list(relationship = contrasts(data$relationship,contrasts=F)) (E.G:)
+  # for each of the covariates!!
+  
+  # Make train and test data for our model matrix adult.data.
+  train_and_test_data <- make.train.and.test(data = adult.data.onehot) # The function returns two matrices (x) and two vectors (y). 
+  # In addition, it returns the indices of the data set used in the training data. 
+  summary(train_and_test_data) # Returned list. 
+  x_train <- train_and_test_data[[1]]
+  y_train <- train_and_test_data[[2]]
+  x_test <- train_and_test_data[[3]]
+  y_test <- train_and_test_data[[4]]
+  train_indices <- train_and_test_data[[5]]
+} else {
+  # Make train and test data for our adult.data.
+  train_and_test_data <- make.train.and.test(data = adult.data) 
+  summary(train_and_test_data) # Returned list. 
+  x_train <- train_and_test_data[[1]]
+  y_train <- train_and_test_data[[2]]
+  x_test <- train_and_test_data[[3]]
+  y_test <- train_and_test_data[[4]]
+  train_indices <- train_and_test_data[[5]]
+}
 
-# Make train and test data.
-train_and_test_data <- make.train.and.test(data = adult.data) # The function returns two matrices (x) and two vectors (y). 
-# In addition, it returns two dataframes that are the original dataframe split into train and test (containing y's and x's).
-summary(train_and_test_data) # Returned list. 
-x_train <- train_and_test_data[[1]]
-y_train <- train_and_test_data[[2]]
-x_test <- train_and_test_data[[3]]
-y_test <- train_and_test_data[[4]]
+if (CLI.args[1] == "ANN"){
+  # Fit ANN.
+  ANN <- fit.ANN(data.matrix(x_train), y_train, data.matrix(x_test), y_test)
+  # We used the one-hot encoding for the binarized and categorical data in this case. 
+  # Any other methods that are better?
+} else if (CLI.args[1] == "logreg"){
+  # Fit logreg.
+  logreg <- fit.logreg(x_train, y_train, x_test, y_test)
+} else if (CLI.args[1] == "rforest" & CLI.args[5]){ # We only fit this when using binarized data. 
+  rforest <- fit.rforest(x_train, y_train, x_test, y_test) # Fit random forest. Takes way longer time than the other two methods. 
+} else {
+  stop("Methods 'logreg', 'ANN' and 'rforest' are the only methods implemented thus far")
+}
 
-# These two are used when I want to make dataframes later, in order to easier keep all correct datatypes in the columns. 
-train <- train_and_test_data[[5]]
-test <- train_and_test_data[[6]]
-
-# Fit ANN.
-ANN <- fit.ANN(data.matrix(x_train), y_train, data.matrix(x_test), y_test)
-# Need to figure out how to implement the ANN with categorical features!
-
-# Fit logreg.
-logreg <- fit.logreg(x_train, y_train, x_test, y_test)
 
 # This is used to return the predicted probabilities according to the model we want to use (for later).
-prediction_model <- function(x_test, method){
+prediction_model <- function(x_test,method){
   # This returns the predicted probabilities of class 1 (>= 50k per year).
+  # We need to make sure that we feed the ANN with the proper design/model matrix for it to work!
   if (method == "logreg"){
-    return(predict(logreg, data.frame(x_test), type = "response")) # Could also simply have used "test" here. 
+    return(predict(logreg, x_test, type = "response")) 
   } else if (method == "ANN"){
     return(as.numeric(ANN %>% predict(data.matrix(x_test))))
-  } else {
-    stop("Methods 'logreg' and 'ANN' are the only two implemented thus far")
+  } else if (method == "rforest"){
+    return(predict(rforest, x_test, type = "response"))
+  } else { # This 'stop' is strictly not necessary since I checked this earlier in the compilation, but it is ok to leave here. 
+    stop("Methods 'logreg', 'ANN' and 'rforest' are the only methods implemented thus far")
   }
 }
 
+### This is not possible anymore, since I am not fitting all of them at once. 
+# Could easily be re-implemented though. The results are still very similar in the three prediction
+# models, which is not really a main point in this project.
 # Predictions from each of the two models (just for show).
-d <- data.frame("logreg" = prediction_model(x_test, method = "logreg"), 
-                "ANN" = prediction_model(data.matrix(x_test), method = "ANN"))
-
-head(d, 20) # The predictions look relatively similar with the two methods. 
-tail(d, 20) # There are a few differences, but not many. 
+# if (CLI.args[5]){
+#   d <- data.frame("logreg" = prediction_model(x_test, method = "logreg"), 
+#                   "ANN" = prediction_model(data.matrix(x_test), method = "ANN"),
+#                   "rforest" = prediction_model(x_test, method = "rforest"))
+# } else {
+#   d <- data.frame("logreg" = prediction_model(x_test, method = "logreg"), 
+#                   "ANN" = prediction_model(data.matrix(x_test), method = "ANN"))
+# }
+# head(d, 20) # The predictions look relatively similar with the two methods. 
+# tail(d, 20) # There are a few differences, but not many. 
 
 ############################################ This is where the generation algorithm begins. 
 data_min_response <- adult.data[,-which(names(adult.data) == "y")] # All covariates (removed the response from the data frame).
@@ -201,22 +242,25 @@ generate <- function(h, K){ # K = 10000 is used in the article for the experimen
 # Here we say that we want to explain predictions that are predicted as 0 (less than 50k a year). We want to find out what we need to change to change
 # this prediction into 1. This is done in the post-processing after generating all the possible counterfactuals. According to the experiments in the article
 # we only generate one counterfactual per factual, for the first 100 undesirable observations we want to explain.
-if (CLI.args[1] %in% c("ANN", "logreg")){
+if (CLI.args[1] %in% c("ANN","logreg","rforest")){
   preds <- prediction_model(x_test, method = CLI.args[1]) 
-} else {
-  stop("Please supply either 'ANN' or 'logreg' as the first CLI argument.")
+} else { # Perhaps we need to add a special if else for ANN here! (because of the model matrix being different!)
+  stop("Please supply either 'ANN', 'logreg' or 'rforest' as the first CLI argument.")
 }
 
 #preds_sorted <- sort(preds, decreasing = F, index.return = T) # Vil tro det kanskje ikke er dette de er på jakt etter!?
 #preds_sorted_values <- preds_sorted$x[1:10] # Skal egentlig ha de 100 første! Gjør dette for testing nå!
 #preds_sorted_indices <- preds_sorted$ix[1:10]
 #new_predicted_data <- cbind(test[preds_sorted_indices,colnames(adult.data)], "y_pred" = preds_sorted_values)
-new_predicted_data <- data.frame(cbind(test[,colnames(adult.data)], "y_pred" = preds)) 
-H <- new_predicted_data[new_predicted_data$y_pred < 0.5, ] 
-H <- H[1:(CLI.args[2]),-which(names(new_predicted_data) %in% c("y_pred","y"))] # Prøver bare med de 10 første foreløpig.
+#H <- H[1:(CLI.args[2]),-which(names(new_predicted_data) %in% c("y_pred","y"))]
 # We select the 100 test observations with the lowest predicted probability? Perhaps this is not what they mean by 
 # "the first 100 observations with an undesirable prediction"? 
-# I have gone away from this for now!
+
+new_predicted_data <- data.frame(cbind(adult.data[-train_indices, ], "y_pred" = preds)) 
+H <- new_predicted_data[new_predicted_data$y_pred < 0.5, ] 
+s <- sample(1:nrow(H), size = CLI.args[2]) # Sample CLI.args[2] random points from H.
+H <- H[s,-which(names(new_predicted_data) %in% c("y_pred","y"))] 
+# I have gone away from the above first 100 sorted lowest predicted probabilities.
 # The code has been left here though, since I could probably discuss this in the report!
 
 K <- as.numeric(CLI.args[3]) # Assume that the third command line input is an integer. 
@@ -244,11 +288,20 @@ if (CLI.args[4]){
 
 ######################################## Post-processing.
 
-post.processing <- function(D_h, H){
+post.processing <- function(list_of_values, H_counterf){
   # Remove the rows of D_h (per point) not satisfying the listed criteria. 
   
   fulfill_crit3_D_h <- function(D_h, c, pred.method){
-    D_h_crit3 <- D_h[prediction_model(D_h, method = pred.method) >= c,] # prediction_model(*) is the R function that predicts 
+    #D_h <- D_h_per_point[[1]]
+    #pred.method <- "ANN"
+    if (pred.method == "ANN"){
+      onehot_test_dat <- as.data.frame(model.matrix(~.,data = D_h)) # Det er her den failer (for D_h'er som ikke har nok verdier!!)
+      predictions <- prediction_model(onehot_test_dat, method = pred.method)
+    } else {
+      predictions <- prediction_model(D_h, method = pred.method)
+    }
+    #c <- 0.5
+    D_h_crit3 <- D_h[predictions >= c,] # prediction_model(*) is the R function that predicts 
     # according to the model we want to make explanations for. 
     # We can see that many rows are the same. The duplicates are removed below. 
     unique_D_h <- unique(D_h_crit3)
@@ -269,6 +322,8 @@ post.processing <- function(D_h, H){
   
   add_metrics_D_h_all_points <- function(D_h_pp, H_l){
     # Calculates sparsity and Gower for all counterfactuals and adds the columns to each respective D_h.
+    #D_h_pp <- D_h_per_point
+    #H_l <- H
     for (i in 1:length(D_h_pp)){
       D_h_pp[[i]] <- gower_D_h(H_l[i,], D_h_pp[[i]])
       D_h_pp[[i]] <- sparsity_D_h(H_l[i,], D_h_pp[[i]])
@@ -277,16 +332,27 @@ post.processing <- function(D_h, H){
   }
   
   # Remove non-valid counterfactuals (those that don't change the prediction).
-  crit3_D_h_per_point <- fulfill_crit3(D_h_pp = D_h, c = 0.5, pred.method = CLI.args[1]) # Fulfill criterion 3 for all (unique) generated possible counterfactuals. 
+  crit3_D_h_per_point <- fulfill_crit3(D_h_pp = list_of_values, c = 0.5, pred.method = CLI.args[1]) # Fulfill criterion 3 for all (unique) generated possible counterfactuals. 
   
   # Add sparsity and Gower distance to each row. 
-  crit4_D_h_all_points <- add_metrics_D_h_all_points(crit3_D_h_per_point,H)
+  crit4_D_h_all_points <- add_metrics_D_h_all_points(crit3_D_h_per_point,H_counterf)
   return(crit4_D_h_all_points) # Return D_h with Gower and sparsity added as columns. Also, non-valid counterfactuals are removed. 
 }
 
 D_h_post_processed <- post.processing(D_h_per_point, H)
 
-############# Do we want several counterfactuals per factual or only one? Below we select one!
+# Sjekker at alt fungerer som det skal!
+crit3_D_h_per_point <- fulfill_crit3(D_h_per_point, 0.5, CLI.args[1])
+d <- D_h_per_point[[3]]
+d$relationship <- factor(d$relationship, levels = c(levels(d$relationship), "Husband"))
+onehot_test_dat <- as.data.frame(model.matrix(~.,data = d, contrasts.arg = list(
+  relationship = contrasts(adult.data$relationship, contrasts = FALSE)
+)))
+# Ser at jeg må legge til ekstra levels for hver faktor der det mangler en level! (for at det skal være mulig å lage en model.matrix!)
+# Finnes det noen annen måte jeg kan gjøre dette på!?!?? Høre med Kjersti!!!
+
+
+############ Do we want several counterfactuals per factual or only one? Below we select one!
 generate_one_counterfactual_D_h <- function(D_h){
   # Generate one counterfactual for one factual, i.e. reduce the corresponding D_h to 1 row.
   if (nrow(D_h) >= 1){

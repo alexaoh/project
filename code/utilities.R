@@ -46,7 +46,7 @@ de.normalize.data <- function(data, continuous_vars, m.list, M.list){
 }
 
 make.train.and.test <- function(data, train.ratio = 2/3){
-  # Make the train and test data. Return all the four parts as a list.
+  # Make the train and test data. Return all the four parts as a list. We also return the train indices.
   sample.size <- floor(nrow(data) * train.ratio)
   train.indices <- sample(1:nrow(data), size = sample.size)
   train <- data[train.indices, ]
@@ -57,7 +57,7 @@ make.train.and.test <- function(data, train.ratio = 2/3){
   x_test <- test[,-which(names(test) == "y")] # Testing covariates. 
   y_test <- test[,c("y")] # Testing label.
   return(list("x_train" = x_train, "y_train" = y_train, "x_test" = x_test, "y_test" = y_test, 
-              "train" = train, "test" = test))
+              "train_indices" = train.indices))
 }
 
 
@@ -108,6 +108,23 @@ fit.logreg <- function(x_train, y_train, x_test, y_test){
   print(confusionMatrix(factor(y_pred_logreg), factor(y_test)))
   print(roc(response = y_test, predictor = as.numeric(y_pred_logreg), plot = T))
   return(lin_mod)
+}
+
+
+fit.rforest <- function(x_train, y_train, x_test, y_test){
+  # Fit the random forest and return the random forest object.
+  
+  # I assume that the Gini index is used per standard. 
+  # How can I set "min_samples_split" here?
+  rf <- randomForest(y ~ ., ntree = 100, data=data.frame(cbind(x_train, "y" = y_train)))
+  print(summary(rf))
+  print(importance(rf))
+  y_pred_rf <- predict(rf, data.frame(x_test), type = "response")
+  y_pred_rf[y_pred_rf >= 0.5] <- 1
+  y_pred_rf[y_pred_rf < 0.5] <- 0
+  print(confusionMatrix(factor(y_pred_rf), factor(y_test)))
+  print(roc(response = y_test, predictor = as.numeric(y_pred_rf), plot = T))
+  return(rf)
 }
 
 ############################ Tools for post-processing of possible counterfactuals.
