@@ -5,9 +5,14 @@ setwd("/home/ajo/gitRepos/project")
 ###################################### Loading and cleaning the Adult data.
 data1 <- read.csv("original_data/adult.data", header = F) 
 data2 <- read.csv("original_data/adult.test", header = F) 
+# Prøver med github-dataen.
+# adult.data <- read.csv("data_from_mcce_github.csv")
+# colnames(adult.data) <- c("age","workclass","fnlwgt","education_num",
+#                                           "marital_status","occupation","relationship","race","sex",
+#                                           "capital_gain","capital_loss","hours_per_week","native_country", "y")
 colnames(data1) <- colnames(data2) <- c("age","workclass","fnlwgt","education","education_num",
-                     "marital_status","occupation","relationship","race","sex",
-                     "capital_gain","capital_loss","hours_per_week","native_country", "y")
+                    "marital_status","occupation","relationship","race","sex",
+                    "capital_gain","capital_loss","hours_per_week","native_country", "y")
 dim(data1)[1] + dim(data2)[1] # Need to concat the test data and the other data given on the website to get all the data used in article. 
 adult.data <- rbind(data1, data2) # This is the full dataset.
 any(is.na(adult.data))

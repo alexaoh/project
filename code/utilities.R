@@ -66,19 +66,25 @@ fit.ANN <- function(x_train, y_train, x_test, y_test){
   # Fit the ANN and return the keras object for the ANN.
   
   ANN <- keras_model_sequential() %>%
-    layer_dense(units = 18, activation = 'relu', input_shape = c(ncol(x_train))) %>%
-    layer_dense(units = 9, activation = 'relu') %>%
-    layer_dense(units = 3, activation = 'relu') %>% 
+    layer_dense(units = 300, activation = 'relu', input_shape = c(ncol(x_train))) %>% # ,kernel_regularizer = regularizer_l1(1e-5)) %>%
+    layer_dropout(0.2) %>% 
+    # layer_dense(units = 300, activation = 'relu') %>%
+    # layer_dropout(0.2) %>% 
+    # layer_dense(units = 100, activation = 'relu') %>% 
+    # layer_dropout(0.2) %>% 
+    # layer_dense(units = 60, activation = 'relu') %>% 
+    # layer_dropout(0.2) %>% 
+    # layer_dense(units = 15, activation = 'relu') %>% 
     layer_dense(units = 1, activation = 'sigmoid')
   
   # compile (define loss and optimizer)
   ANN %>% compile(loss = 'binary_crossentropy',
-                  optimizer = optimizer_rmsprop(),
+                  optimizer = optimizer_adam(learning_rate = 0.002), # Could try other optimizers also. 
                   metrics = c('accuracy'))
   
   # train (fit)
-  history <- ANN %>% fit(x_train, y_train, epochs = 40, 
-                         batch_size = 1024, validation_split = 0.2)
+  history <- ANN %>% fit(x_train, y_train, epochs = 30, 
+                         batch_size = 256, validation_split = 0.2)
   # plot
   plot(history)
   
@@ -90,8 +96,9 @@ fit.ANN <- function(x_train, y_train, x_test, y_test){
   # evaluate on test data. 
   ANN %>% evaluate(x_test, y_test)
   
-  y_pred <- ANN %>% predict(x_test) %>% `>`(0.5) %>% k_cast("int32")
-  y_pred <- as.array(y_pred)
+  y_pred <- ANN %>% predict(x_test) %>% `>=`(0.5) #%>% k_cast("int32")
+  #y_pred <- as.array(y_pred) # My previous solution seems to have stopped working for some reason?
+  y_pred <- as.numeric(y_pred)
   tab <- table("Predictions" = y_pred, "Labels" = y_test)
   print(confusionMatrix(factor(y_pred), factor(y_test)))
   print(roc(response = y_test, predictor = as.numeric(y_pred), plot = T))

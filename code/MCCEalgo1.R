@@ -28,6 +28,9 @@ for (i in CLI.args){
   print(i)
 }
 
+# Just for testing right now, should be removed later!
+CLI.args <- c("ANN",100,10000, FALSE, TRUE)
+
 ########################################### Build ML models for classification: which individuals obtain an income more than 50k yearly?
 set.seed(42) # Set seed to begin with!
 
@@ -47,6 +50,18 @@ adult.data.normalized <- normalize.data(data = adult.data, continuous_vars = con
 summary(adult.data.normalized)
 adult.data <- adult.data.normalized[[1]] # we are only interested in the data for now. 
 
+make.data.for.ANN <- function(){
+  train_text <- adult.data[,-which(names(adult.data) %in% cont)]
+  train_text <- train_text[,-ncol(train_text)] # Remove the label!
+  train_numbers <- adult.data[,which(names(adult.data) %in% cont)]
+  encoded <- caret::dummyVars(" ~ .", data = train_text, fullRank = F)
+  train_encoded <- data.frame(predict(encoded, newdata = train_text))
+  
+  # This makes a not-fullrank dataset! (which I think we want!). Model.matrix makes a fullRank by default!!
+  return(cbind(train_numbers, train_encoded, adult.data["y"]))
+}
+
+adult.data <- make.data.for.ANN()
 
 # Make train and test data.
 train_and_test_data <- make.train.and.test(data = adult.data) # The function returns two matrices (x) and two vectors (y). 
@@ -62,7 +77,7 @@ train <- train_and_test_data[[5]]
 test <- train_and_test_data[[6]]
 
 # Fit ANN.
-ANN <- fit.ANN(data.matrix(x_train), y_train, data.matrix(x_test), y_test)
+ANN <- fit.ANN(as.matrix(x_train), y_train, as.matrix(x_test), y_test)
 # Need to figure out how to implement the ANN with categorical features!
 
 # Fit logreg.
