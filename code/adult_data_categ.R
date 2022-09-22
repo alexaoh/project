@@ -30,6 +30,13 @@ adult.data$relationship <- as.factor(adult.data$relationship)
 adult.data$race <- as.factor(adult.data$race)
 adult.data$native_country <- as.factor(adult.data$native_country)
 
-save(adult.data, file = "data/adult_data_categ.RData") # Save the dataset including all factors etc.
+summary(adult.data)
+dim(adult.data)
+
+# Before we save our dataset, we remove the columns that have not been used in the article.
+adult.data <- adult.data[,-which(names(adult.data) %in% c("education"))] # We only remove "education".
 
 summary(adult.data)
+dim(adult.data)
+
+save(adult.data, file = "data/adult_data_categ.RData") # Save the dataset including all factors etc.
