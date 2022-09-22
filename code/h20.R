@@ -1,16 +1,34 @@
 setwd("/home/ajo/gitRepos/project")
 load("data/adult_data_binarized.RData", verbose = T) # Binarized factors in the data. 
 
+library(h2o)
 h2o.init() # Need to activate an H2o cluster.
 data <- as.h2o(adult.data)
 
-library(h2o)
 
-splitData <- h2o.splitFrame(data, ratios = c(0.75,0.15), seed = 100)
+ 
+# splitData <- h2o.splitFrame(data, ratios = c(0.75,0.15), seed = 100)
+# 
+# train0 <- splitData[[1]]
+# valid0 <- splitData[[2]]
+# test0  <- splitData[[3]]
 
-train0 <- splitData[[1]]
-valid0 <- splitData[[2]]
-test0  <- splitData[[3]]
+# I try to split myself instead.
+train.ratio <- 2/3
+sample.size <- floor(nrow(adult.data) * train.ratio)
+train.indices <- sample(1:nrow(adult.data), size = sample.size)
+train <- adult.data[train.indices, ]
+test <- adult.data[-train.indices, ]
+
+valid.ratio <- 0.2
+sample.size2 <- floor(nrow(test)*valid.ratio)
+valid.indices <- sample(1:nrow(test), size = sample.size2)
+test <- test[-valid.indices,]
+valid <- test[valid.indices,]
+
+train0 <- as.h2o(train)
+test0 <- as.h2o(test)
+valid0 <- as.h2o(valid)
 
 categorical = c(2,5,6,7,8,9,13)
 
@@ -47,7 +65,7 @@ for(i in categorical)
 model.DL <-
   h2o.deeplearning(x=x,y=y,training_frame=train0,validation_frame=valid0,distribution="bernoulli",loss="CrossEntropy",seed=123,
   activation="Rectifier",
-  hidden=c(18),epochs=1, categorical_encoding = "OneHotExplicit")
+  hidden=c(18),epochs=1, categorical_encoding = "OneHotInternal")
 
 pred  <- h2o.predict(model.DL,newdata=test0)
 perf <- h2o.performance(model.DL,newdata=test0)
