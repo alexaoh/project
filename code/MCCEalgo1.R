@@ -16,6 +16,7 @@ library(rpart.plot) # For plotting rpart trees in a more fancy way.
 library(dplyr)
 library(keras) # for deep learning models. 
 library(pROC) # For ROC curve.
+library(hmeasure) # For AUC (I am testing this for comparison to pROC).
 library(caret) # For confusion matrix.
 
 # Source some of the needed code. 
@@ -48,9 +49,10 @@ cont <- c("age","fnlwgt","education_num","capital_gain","capital_loss","hours_pe
 
 adult.data.normalized <- normalize.data(data = adult.data, continuous_vars = cont) # returns list with data, mins and maxs.
 summary(adult.data.normalized)
-adult.data <- adult.data.normalized[[1]] # we are only interested in the data for now. 
+adult.data <- adult.data.normalized[[1]] # we are only interested in the data for now.
 
 make.data.for.ANN <- function(){
+  # Make design matrix via one-hot encoding of the categorical variables. 
   train_text <- adult.data[,-which(names(adult.data) %in% cont)]
   train_text <- train_text[,-ncol(train_text)] # Remove the label!
   train_numbers <- adult.data[,which(names(adult.data) %in% cont)]
@@ -72,13 +74,13 @@ y_train <- train_and_test_data[[2]]
 x_test <- train_and_test_data[[3]]
 y_test <- train_and_test_data[[4]]
 
+
 # These two are used when I want to make dataframes later, in order to easier keep all correct datatypes in the columns. 
 train <- train_and_test_data[[5]]
 test <- train_and_test_data[[6]]
 
 # Fit ANN.
 ANN <- fit.ANN(as.matrix(x_train), y_train, as.matrix(x_test), y_test)
-# Need to figure out how to implement the ANN with categorical features!
 
 # Fit logreg.
 logreg <- fit.logreg(x_train, y_train, x_test, y_test)

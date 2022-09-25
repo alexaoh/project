@@ -18,13 +18,18 @@ adult.data <- rbind(data1, data2) # This is the full dataset.
 any(is.na(adult.data))
 
 # Make corrections to the variables (data types, etc).
-adult.data$y[adult.data$y == " <=50K."] <- "<=50K"
-adult.data$y[adult.data$y == " <=50K"] <- "<=50K"
-adult.data$y[adult.data$y == " >50K."] <- ">50K"
-adult.data$y[adult.data$y == " >50K"] <- ">50K"
-adult.data$y[adult.data$y == ">50K"] <- 1
-adult.data$y[adult.data$y == "<=50K"] <- 0
-adult.data$y <- as.numeric(adult.data$y)
+adult.data$y[adult.data$y == " <=50K."] <- " <=50K"
+adult.data$y[adult.data$y == " <=50K"] <- " <=50K"
+adult.data$y[adult.data$y == " >50K."] <- " >50K"
+adult.data$y[adult.data$y == " >50K"] <- " >50K"
+# adult.data$y[adult.data$y == " >50K"] <- 1
+# adult.data$y[adult.data$y == " <=50K"] <- 0
+# adult.data$y <- as.numeric(adult.data$y)
+
+# Fix binarization into 0 and 1 for y. 
+response <- array(0,dim(adult.data)[1])
+response[which(as.character(adult.data[,14])==" >50K")] <- 1
+adult.data[,14] <- as.numeric(response)
 
 adult.data$sex <- as.factor(adult.data$sex)
 adult.data$workclass <- as.factor(adult.data$workclass)
