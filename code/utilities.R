@@ -122,6 +122,19 @@ fit.logreg <- function(x_train, y_train, x_test, y_test){
   return(lin_mod)
 }
 
+fit.random.forest <- function(x_train, y_train, x_test, y_test){
+  model <- ranger(as.factor(y_train) ~ ., data = x_train, num.trees = 500, num.threads = 6,
+                  verbose = TRUE,
+                  probability = TRUE,
+                  importance = "impurity",
+                  mtry = sqrt(13))
+  pred.rf <- predict(model, data = x_test)
+  results <- HMeasure(y_test,pred.rf$predictions[,2],threshold=0.15)
+  print(results$metrics$AUC)
+  print(roc(response = y_test, predictor = as.numeric(pred.rf$predictions[,2]), plot = T))
+  return(model)
+}
+
 ############################ Tools for post-processing of possible counterfactuals.
 sparsity_D_h <- function(x_h,D_h){
   # Calculates sparsity for one counterfactual x_h; "Number of features changed between x_h and the counterfactual".

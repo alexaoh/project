@@ -10,14 +10,14 @@
 rm(list = ls())  # make sure to remove previously loaded variables into the Session.
 
 setwd("/home/ajo/gitRepos/project")
-library(tree) # For regression trees. This is not needed anymore I believe. 
-library(rpart) # Try this for building CART trees instead!
-library(rpart.plot) # For plotting rpart trees in a more fancy way.
+#library(rpart) # Try this for building CART trees instead!
+#library(rpart.plot) # For plotting rpart trees in a more fancy way.
 library(dplyr)
-library(keras) # for deep learning models. 
+#library(keras) # for deep learning models. 
 library(pROC) # For ROC curve.
 library(hmeasure) # For AUC (I am testing this for comparison to pROC).
 library(caret) # For confusion matrix.
+library(ranger) # For implementing a random forest classifier.
 
 # Source some of the needed code. 
 source("code/utilities.R")
@@ -47,9 +47,9 @@ if (CLI.args[5]){
 # List of continuous variables.
 cont <- c("age","fnlwgt","education_num","capital_gain","capital_loss","hours_per_week")
 
-adult.data.normalized <- normalize.data(data = adult.data, continuous_vars = cont) # returns list with data, mins and maxs.
-summary(adult.data.normalized)
-adult.data <- adult.data.normalized[[1]] # we are only interested in the data for now.
+# adult.data.normalized <- normalize.data(data = adult.data, continuous_vars = cont) # returns list with data, mins and maxs.
+# summary(adult.data.normalized)
+# adult.data <- adult.data.normalized[[1]] # we are only interested in the data for now.
 
 make.data.for.ANN <- function(){
   # Make design matrix via one-hot encoding of the categorical variables. 
@@ -63,7 +63,7 @@ make.data.for.ANN <- function(){
   return(cbind(train_numbers, train_encoded, adult.data["y"]))
 }
 
-adult.data <- make.data.for.ANN()
+#adult.data <- make.data.for.ANN()
 
 # Make train and test data.
 train_and_test_data <- make.train.and.test(data = adult.data) # The function returns two matrices (x) and two vectors (y). 
@@ -80,29 +80,35 @@ train <- train_and_test_data[[5]]
 test <- train_and_test_data[[6]]
 
 # Fit ANN.
-ANN <- fit.ANN(as.matrix(x_train), y_train, as.matrix(x_test), y_test)
+#ANN <- fit.ANN(as.matrix(x_train), y_train, as.matrix(x_test), y_test)
 
 # Fit logreg.
-logreg <- fit.logreg(x_train, y_train, x_test, y_test)
+#logreg <- fit.logreg(x_train, y_train, x_test, y_test)
+
+# Fit random forest. We use this for now (forget the ANN, since it sucks).
+random.forest <- fit.random.forest(x_train, y_train, x_test, y_test)
 
 # This is used to return the predicted probabilities according to the model we want to use (for later).
 prediction_model <- function(x_test, method){
   # This returns the predicted probabilities of class 1 (>= 50k per year).
   if (method == "logreg"){
-    return(predict(logreg, data.frame(x_test), type = "response")) # Could also simply have used "test" here. 
+    return(predict(logreg, data.frame(x_test), type = "response")) 
   } else if (method == "ANN"){
     return(as.numeric(ANN %>% predict(data.matrix(x_test))))
+  } else if (method == "random forest"){
+  return(predict(random.forest, x_test)[,2]) 
   } else {
-    stop("Methods 'logreg' and 'ANN' are the only two implemented thus far")
+    stop("Methods 'logreg', 'ANN' and 'random forest' are the only implemented thus far")
   }
 }
 
+# This is not relevant anymore :)
 # Predictions from each of the two models (just for show).
-d <- data.frame("logreg" = prediction_model(x_test, method = "logreg"), 
-                "ANN" = prediction_model(data.matrix(x_test), method = "ANN"))
-
-head(d, 20) # The predictions look relatively similar with the two methods. 
-tail(d, 20) # There are a few differences, but not many. 
+# d <- data.frame("logreg" = prediction_model(x_test, method = "logreg"), 
+#                 "ANN" = prediction_model(data.matrix(x_test), method = "ANN"))
+# 
+# head(d, 20) # The predictions look relatively similar with the two methods. 
+# tail(d, 20) # There are a few differences, but not many. 
 
 ############################################ This is where the generation algorithm begins. 
 data_min_response <- adult.data[,-which(names(adult.data) == "y")] # All covariates (removed the response from the data frame).
@@ -129,13 +135,14 @@ for (i in 1:q){
     #T_j[[i]] <- rpart(tot_form, data = adult.data, method = "class", control = rpart.control(minsplit = 2, minbucket = 1)) 
     T_j[[i]] <- rpart(tot_form, data = adult.data, method = "class", control = rpart.control(minbucket = 5, cp = 0.001)) 
     # Method = "class": Uses Gini index, I believe. Check the docs again. 
-  } else if (mut_datatypes[[i]] == "numeric"){ # mean squared error.
+  } else if (mut_datatypes[[i]] == "integer"){ # mean squared error.
     #T_j[[i]] <- tree(tot_form, data = adult.data, control = tree.control(nobs = nrow(adult.data), mincut = 5, minsize = 10), split = "deviance", x = T)
     #T_j[[i]] <- rpart(tot_form, data = adult.data, method = "anova", control = rpart.control(minsplit = 2, minbucket = 1)) 
     T_j[[i]] <- rpart(tot_form, data = adult.data, method = "anova", control = rpart.control(minbucket = 5, cp = 0.001)) 
     # Method = "anova": SST-(SSL+SSR). Check out the docs. This should (hopefully) be the same as Mean Squared Error. 
   } else { 
-    stop("Error: Datatypes need to be either factor or numeric.")
+    #stop("Error: Datatypes need to be either factor or numeric.")
+    stop("Error: Datatypes need to be either factor or integer.")
   } # Flere av trærne som blir kun en root node. Mulig noe må endres på!?
 }
 
@@ -166,7 +173,6 @@ plot_tree(8)
 plot_tree(9)
 plot_tree(10)
 plot_tree(11)
-plot_tree(12)
 
 ############################### Generate counterfactuals based on trees etc. 
 # Generate counterfactual per sample. 
