@@ -2,6 +2,10 @@
 
 # FIRST WE CHECK THE TREES THAT ARE BUILT FOR THE NORMALIZED TREES!
 
+# Need to check the trees for both categorical and binarized data!
+#load("data/adult_data_categ.RData", verbose = T) 
+#load("data/adult_data_binarized.RData", verbose = T) 
+
 # Tree 1. We check the root nodes. 
 (tab1 <- table(adult.data %>% filter(age < 0.27) %>% select(workclass)))
 tab1[1]/sum(tab1)
@@ -125,3 +129,38 @@ mean((adult.data %>% filter(education_num < 13 & marital_status == " Married-civ
 # Tree 10. This tree is also quite large!
 
 # Tree 11. This tree is also quite large!
+
+
+
+###### Categorical data.
+# Tree 1. We check the root nodes. 
+(tab1 <- table(adult.data %>% select(workclass)))
+tab1[1]/sum(tab1)
+tab1[2]/sum(tab1)
+tab1[3]/sum(tab1)
+tab1[4]/sum(tab1)
+tab1[5]/sum(tab1)
+tab1[6]/sum(tab1)
+tab1[7]/sum(tab1)
+
+# Tree 2. We check the root nodes. 
+mean((adult.data %>% filter(age >= 40) %>% select(fnlwgt))$fnlwgt)
+mean((adult.data %>% filter(age < 40) %>% select(fnlwgt))$fnlwgt)
+# The tree looks ok, but is does not use workclass or sex. 
+
+# Tree 3. We check the root nodes. 
+mean((adult.data %>% filter(age < 18 & workclass %in% c(" Private"," Without_pay"," Self-emp-inc")) %>% select(education_num))$education_num)
+mean((adult.data %>% filter(age >= 18 & age < 19 & workclass %in% c(" Private"," Without_pay"," Self-emp-inc")) %>% select(education_num))$education_num)
+mean((adult.data %>% filter(age >= 19 & age >= 52 & workclass %in% c(" Private"," Without_pay"," Self-emp-inc")) %>% select(education_num))$education_num)
+mean((adult.data %>% filter(age >= 19 & age < 52 & age < 23 & workclass %in% c(" Private"," Without_pay"," Self-emp-inc")) %>% select(education_num))$education_num)
+mean((adult.data %>% filter(age >= 19 & age < 52 & age >= 23 & workclass %in% c(" Private"," Without_pay"," Self-emp-inc")) %>% select(education_num))$education_num)
+# Looks ok!
+
+# Tree 7
+(tab1 <- table(adult.data %>% select(race)))
+tab1[1]/sum(tab1)
+tab1[2]/sum(tab1)
+tab1[3]/sum(tab1)
+tab1[4]/sum(tab1)
+tab1[5]/sum(tab1)
+# Looks fine!

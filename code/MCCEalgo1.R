@@ -30,7 +30,7 @@ for (i in CLI.args){
 }
 
 # Just for testing right now, should be removed later!
-CLI.args <- c("ANN",100,10000, FALSE, TRUE)
+#CLI.args <- c("ANN",100,10000, FALSE, FALSE)
 
 ########################################### Build ML models for classification: which individuals obtain an income more than 50k yearly?
 set.seed(42) # Set seed to begin with!
@@ -95,10 +95,10 @@ prediction_model <- function(x_test, method){
     return(predict(logreg, data.frame(x_test), type = "response")) 
   } else if (method == "ANN"){
     return(as.numeric(ANN %>% predict(data.matrix(x_test))))
-  } else if (method == "random forest"){
-  return(predict(random.forest, x_test)[,2]) 
+  } else if (method == "randomForest"){
+  return(predict(random.forest, x_test)$predictions[,2]) 
   } else {
-    stop("Methods 'logreg', 'ANN' and 'random forest' are the only implemented thus far")
+    stop("Methods 'logreg', 'ANN' and 'randomForest' are the only implemented thus far")
   }
 }
 
@@ -141,7 +141,7 @@ for (i in 1:q){
     T_j[[i]] <- rpart(tot_form, data = adult.data, method = "anova", control = rpart.control(minbucket = 5, cp = 0.001)) 
     # Method = "anova": SST-(SSL+SSR). Check out the docs. This should (hopefully) be the same as Mean Squared Error. 
   } else { 
-    #stop("Error: Datatypes need to be either factor or numeric.")
+    #stop("Error: Datatypes need to be either factor or numeric.") # WE need to use "numeric" if we have normalized the data!
     stop("Error: Datatypes need to be either factor or integer.")
   } # Flere av trærne som blir kun en root node. Mulig noe må endres på!?
 }
@@ -159,7 +159,6 @@ plot_tree <- function(index){
   } else {
     rpart.plot::prp(tree.mod)
   }
-  
 }
 
 plot_tree(1)
@@ -224,10 +223,10 @@ generate <- function(h, K){ # K = 10000 is used in the article for the experimen
 # Here we say that we want to explain predictions that are predicted as 0 (less than 50k a year). We want to find out what we need to change to change
 # this prediction into 1. This is done in the post-processing after generating all the possible counterfactuals. According to the experiments in the article
 # we only generate one counterfactual per factual, for the first 100 undesirable observations we want to explain.
-if (CLI.args[1] %in% c("ANN", "logreg")){
+if (CLI.args[1] %in% c("ANN", "logreg", "randomForest")){
   preds <- prediction_model(x_test, method = CLI.args[1]) 
 } else {
-  stop("Please supply either 'ANN' or 'logreg' as the first CLI argument.")
+  stop("Please supply either 'ANN', 'logreg' or 'randomForest' as the first CLI argument.")
 }
 
 #preds_sorted <- sort(preds, decreasing = F, index.return = T) # Vil tro det kanskje ikke er dette de er på jakt etter!?
@@ -267,8 +266,20 @@ if (CLI.args[4]){
 
 ######################################## Post-processing.
 
-post.processing <- function(D_h, H){
+post.processing <- function(D_h, H, data){ # 'data' is used to calculate normalization factors for Gower.
   # Remove the rows of D_h (per point) not satisfying the listed criteria. 
+  
+  # Find the normalization factors for Gower.
+  norm.factors <- c()
+  for (n in colnames(data)){
+    colm <- (data %>% select(n))[[1]]
+    if (class(colm) == "integer"){
+      norm.factors <- c(norm.factors, max(colm))
+    } else {
+      norm.factors <- c(norm.factors, NA)
+    }
+  }
+  
   
   fulfill_crit3_D_h <- function(D_h, c, pred.method){
     D_h_crit3 <- D_h[prediction_model(D_h, method = pred.method) >= c,] # prediction_model(*) is the R function that predicts 
@@ -290,10 +301,10 @@ post.processing <- function(D_h, H){
   ##### Fulfilling criterion 4.
   # Calculate Sparsity and Gower's distance for each D_h (per point).
   
-  add_metrics_D_h_all_points <- function(D_h_pp, H_l){
+  add_metrics_D_h_all_points <- function(D_h_pp, H_l, norm.factors){
     # Calculates sparsity and Gower for all counterfactuals and adds the columns to each respective D_h.
     for (i in 1:length(D_h_pp)){
-      D_h_pp[[i]] <- gower_D_h(H_l[i,], D_h_pp[[i]])
+      D_h_pp[[i]] <- gower_D_h(H_l[i,], D_h_pp[[i]], norm.factors)
       D_h_pp[[i]] <- sparsity_D_h(H_l[i,], D_h_pp[[i]])
     }
     return(D_h_pp)
@@ -307,7 +318,7 @@ post.processing <- function(D_h, H){
   return(crit4_D_h_all_points) # Return D_h with Gower and sparsity added as columns. Also, non-valid counterfactuals are removed. 
 }
 
-D_h_post_processed <- post.processing(D_h_per_point, H)
+D_h_post_processed <- post.processing(D_h_per_point, H, adult.data[,-14])
 
 ############# Do we want several counterfactuals per factual or only one? Below we select one!
 generate_one_counterfactual_D_h <- function(D_h){
