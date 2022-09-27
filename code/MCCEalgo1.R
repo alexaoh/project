@@ -10,8 +10,8 @@
 rm(list = ls())  # make sure to remove previously loaded variables into the Session.
 
 setwd("/home/ajo/gitRepos/project")
-#library(rpart) # Try this for building CART trees instead!
-#library(rpart.plot) # For plotting rpart trees in a more fancy way.
+library(rpart) # Try this for building CART trees instead!
+library(rpart.plot) # For plotting rpart trees in a more fancy way.
 library(dplyr)
 #library(keras) # for deep learning models. 
 library(pROC) # For ROC curve.
@@ -30,7 +30,7 @@ for (i in CLI.args){
 }
 
 # Just for testing right now, should be removed later!
-#CLI.args <- c("ANN",100,10000, FALSE, FALSE)
+#CLI.args <- c("logreg",100,10000, FALSE, FALSE)
 
 ########################################### Build ML models for classification: which individuals obtain an income more than 50k yearly?
 set.seed(42) # Set seed to begin with!
@@ -179,7 +179,6 @@ generate <- function(h, K){ # K = 10000 is used in the article for the experimen
   # Instantiate entire D_h-matrix for all features. 
   D_h <- as.data.frame(matrix(data = rep(NA, K*p), nrow = K, ncol = p))
   colnames(D_h) <- c(fixed_features, mut_features)
-  
 
   # Fill the matrix D_h with copies of the vectors of fixed features. 
   # All rows should have the same value in all the fixed features. 
@@ -191,7 +190,7 @@ generate <- function(h, K){ # K = 10000 is used in the article for the experimen
   for (j in 1:q){
     feature_regressed <- mut_features[j]
     feature_regressed_dtype <- mut_datatypes[[j]]
-    
+
     d <- rep(NA, K) # Empty vector of length K. 
     # Will be inserted into D_h later (could col-bind also, but chose to instantiate entire D_h from the beginning).
     
@@ -209,7 +208,7 @@ generate <- function(h, K){ # K = 10000 is used in the article for the experimen
         #   d[i] <- levels(adult.data[,feature_regressed])[largest_index[1]]
         # }
         # I think the following is a better solution.
-        d[i] <- sample(levels(adult.data[,feature_regressed])[largest_index,], 1, largest_class) # I need to test it though!!
+        d[i] <- sample(x = levels(adult.data[,feature_regressed])[largest_index], size = 1, prob = largest_class) 
       } else { # Numeric
         d[i] <- end_node_distr
       }
@@ -316,7 +315,7 @@ post.processing <- function(D_h, H, data){ # 'data' is used to calculate normali
   crit3_D_h_per_point <- fulfill_crit3(D_h_pp = D_h, c = 0.5, pred.method = CLI.args[1]) # Fulfill criterion 3 for all (unique) generated possible counterfactuals. 
   
   # Add sparsity and Gower distance to each row. 
-  crit4_D_h_all_points <- add_metrics_D_h_all_points(crit3_D_h_per_point,H)
+  crit4_D_h_all_points <- add_metrics_D_h_all_points(crit3_D_h_per_point,H, norm.factors)
   return(crit4_D_h_all_points) # Return D_h with Gower and sparsity added as columns. Also, non-valid counterfactuals are removed. 
 }
 

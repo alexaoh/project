@@ -3,10 +3,10 @@
 # when generating with K = 10000.
 
 #load("results/D_hs/ANN_H100_K10000_binTRUE.RData", verbose = T)
-#load("data/adult_data_binarized.RData", verbose = T) 
-load("data/adult_data_categ.RData", verbose = T) 
-load("results/D_hs/logreg_H100_K10000_binFALSE.RData", verbose = T)
-
+load("data/adult_data_binarized.RData", verbose = T) 
+#load("data/adult_data_categ.RData", verbose = T) 
+#load("results/D_hs/logreg_H100_K10000_binFALSE.RData", verbose = T)
+load("results/D_hs/randomForest_H100_K10000_binTRUE.RData", verbose = T)
 
 str(D_h_per_point[[1]])
 
@@ -17,7 +17,7 @@ adult.data.normalized <- normalize.data(data = adult.data, continuous_vars = con
 # str(adult.data.normalized[[1]])
 
 # We de-normalize the data seen above. 
-D_h_first <- de.normalize.data(D_h_per_point[[1]], cont, adult.data.normalized[[2]], adult.data.normalized[[3]])
+D_h_first <- D_h_per_point[[1]]#de.normalize.data(D_h_per_point[[1]], cont, adult.data.normalized[[2]], adult.data.normalized[[3]])
 str(D_h_first)
 table(D_h_first$age)
 table(D_h_first$sex)
