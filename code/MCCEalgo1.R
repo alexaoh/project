@@ -202,12 +202,14 @@ generate <- function(h, K){ # K = 10000 is used in the article for the experimen
       largest_class <- sorted$x
       largest_index <- sorted$ix
       if (feature_regressed_dtype == "factor"){
-        s <- runif(1)
-        if (s >= largest_class[1]){ # This only works for two classes at this point!
-          d[i] <- levels(adult.data[,feature_regressed])[largest_index[2]]
-        } else {
-          d[i] <- levels(adult.data[,feature_regressed])[largest_index[1]]
-        }
+        # s <- runif(1)
+        # if (s >= largest_class[1]){ # This only works for two classes at this point! Perhaps I can simply use the sample function with the list of probabilities?
+        #   d[i] <- levels(adult.data[,feature_regressed])[largest_index[2]]
+        # } else {
+        #   d[i] <- levels(adult.data[,feature_regressed])[largest_index[1]]
+        # }
+        # I think the following is a better solution.
+        d[i] <- sample(levels(adult.data[,feature_regressed])[largest_index,], 1, largest_class) # I need to test it though!!
       } else { # Numeric
         d[i] <- end_node_distr
       }
