@@ -135,15 +135,14 @@ for (i in 1:q){
     #T_j[[i]] <- rpart(tot_form, data = adult.data, method = "class", control = rpart.control(minsplit = 2, minbucket = 1)) 
     T_j[[i]] <- rpart(tot_form, data = adult.data, method = "class", control = rpart.control(minbucket = 5, cp = 0.001)) 
     # Method = "class": Uses Gini index, I believe. Check the docs again. 
-  } else if (mut_datatypes[[i]] == "integer"){ # mean squared error.
+  } else if (mut_datatypes[[i]] == "integer" || mut_datatypes[[i]] == "numeric"){ # mean squared error.
     #T_j[[i]] <- tree(tot_form, data = adult.data, control = tree.control(nobs = nrow(adult.data), mincut = 5, minsize = 10), split = "deviance", x = T)
     #T_j[[i]] <- rpart(tot_form, data = adult.data, method = "anova", control = rpart.control(minsplit = 2, minbucket = 1)) 
     T_j[[i]] <- rpart(tot_form, data = adult.data, method = "anova", control = rpart.control(minbucket = 5, cp = 0.001)) 
     # Method = "anova": SST-(SSL+SSR). Check out the docs. This should (hopefully) be the same as Mean Squared Error. 
   } else { 
-    #stop("Error: Datatypes need to be either factor or numeric.") # WE need to use "numeric" if we have normalized the data!
-    stop("Error: Datatypes need to be either factor or integer.")
-  } # Flere av trærne som blir kun en root node. Mulig noe må endres på!?
+    stop("Error: Datatypes need to be either factor or integer/numeric.") # We need to use "numeric" if we have normalized the data!
+  } 
 }
 
 plot_tree <- function(index){
@@ -284,8 +283,9 @@ post.processing <- function(D_h, H, data){ # 'data' is used to calculate normali
   norm.factors <- c()
   for (n in colnames(data)){
     colm <- (data %>% select(n))[[1]]
-    if (class(colm) == "integer"){
-      norm.factors <- c(norm.factors, max(colm))
+    if (class(colm) == "integer" || class(colm) == "numeric"){
+      norm.factors <- c(norm.factors, max(colm)) # Perhaps use min and max scaling like earlier!? I am testing this now!
+      # Could use a list and append a vector of max and min of the column!
     } else {
       norm.factors <- c(norm.factors, NA)
     }

@@ -161,7 +161,7 @@ gower_D_h <- function(x_h, D_h, norm.factors){
       for (j in 1:p){ # Assuming that the features are already normalized! Perhaps they need to be normalized again!?
         d_j <- D_h[i,j]
         if (dtypes[j] == "integer"){ # If we normalize we need to have "numeric" here!
-          R_j <- norm.factors[j] # normalization factor. This should not be zero!!
+          R_j <- norm.factors[j] # normalization factor. This should not be zero or one!!
           g <- g + 1/R_j*abs(d_j-x_h[,j])
         } else if (dtypes[j] == "factor"){
           if (x_h[,j] != d_j){
