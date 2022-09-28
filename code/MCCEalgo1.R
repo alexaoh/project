@@ -13,7 +13,7 @@ setwd("/home/ajo/gitRepos/project")
 library(rpart) # Try this for building CART trees instead!
 library(rpart.plot) # For plotting rpart trees in a more fancy way.
 library(dplyr)
-#library(keras) # for deep learning models. 
+library(keras) # for deep learning models. 
 library(pROC) # For ROC curve.
 library(hmeasure) # For AUC (I am testing this for comparison to pROC).
 library(caret) # For confusion matrix.
@@ -30,7 +30,7 @@ for (i in CLI.args){
 }
 
 # Just for testing right now, should be removed later!
-#CLI.args <- c("logreg",100,10000, FALSE, FALSE)
+#CLI.args <- c("randomForest",100,10000, FALSE, TRUE)
 
 ########################################### Build ML models for classification: which individuals obtain an income more than 50k yearly?
 set.seed(42) # Set seed to begin with!
@@ -41,15 +41,11 @@ if (CLI.args[5]){
 } else if (CLI.args[5] != T){
   load("data/adult_data_categ.RData", verbose = T) # Categorical factors as they come originally. 
 } else {
-  stop("Please supply either T (binarized data) of F (categorical data) as the fift CLI argument.")
+  stop("Please supply either T (binarized data) of F (categorical data) as the fit CLI argument.")
 }
 
 # List of continuous variables.
 cont <- c("age","fnlwgt","education_num","capital_gain","capital_loss","hours_per_week")
-
-# adult.data.normalized <- normalize.data(data = adult.data, continuous_vars = cont) # returns list with data, mins and maxs.
-# summary(adult.data.normalized)
-# adult.data <- adult.data.normalized[[1]] # we are only interested in the data for now.
 
 make.data.for.ANN <- function(){
   # Make design matrix via one-hot encoding of the categorical variables. 
@@ -63,7 +59,13 @@ make.data.for.ANN <- function(){
   return(cbind(train_numbers, train_encoded, adult.data["y"]))
 }
 
-#adult.data <- make.data.for.ANN()
+
+# # For good performance with the ANN the data should be normalized! For the rest of the methods it does not really matter I think!
+# adult.data.normalized <- normalize.data(data = adult.data, continuous_vars = cont) # returns list with data, mins and maxs.
+# summary(adult.data.normalized)
+# adult.data <- adult.data.normalized[[1]] # we are only interested in the data for now.
+# # Make the design matrix for the DNN.
+# adult.data <- make.data.for.ANN()
 
 # Make train and test data.
 train_and_test_data <- make.train.and.test(data = adult.data) # The function returns two matrices (x) and two vectors (y). 
@@ -74,10 +76,8 @@ y_train <- train_and_test_data[[2]]
 x_test <- train_and_test_data[[3]]
 y_test <- train_and_test_data[[4]]
 
-
-# These two are used when I want to make dataframes later, in order to easier keep all correct datatypes in the columns. 
-train <- train_and_test_data[[5]]
-test <- train_and_test_data[[6]]
+# The train indices are used to construct H later. 
+train_indices <- train_and_test_data[[5]]
 
 # Fit ANN.
 #ANN <- fit.ANN(as.matrix(x_train), y_train, as.matrix(x_test), y_test)
@@ -207,7 +207,7 @@ generate <- function(h, K){ # K = 10000 is used in the article for the experimen
         # } else {
         #   d[i] <- levels(adult.data[,feature_regressed])[largest_index[1]]
         # }
-        # I think the following is a better solution.
+        # I think the following is a better solution. This works for the categorical data as well!
         d[i] <- sample(x = levels(adult.data[,feature_regressed])[largest_index], size = 1, prob = largest_class) 
       } else { # Numeric
         d[i] <- end_node_distr
@@ -215,7 +215,8 @@ generate <- function(h, K){ # K = 10000 is used in the article for the experimen
     }
     D_h[,u+j] <- d # Add all the tree samples based on the jth mutable feature to the next column. 
   }
-  D_h[,colnames(adult.data)[-length(colnames(adult.data))]] %>% mutate_if(is.character,as.factor) # Change characters to factors! THIS IS NOT TESTED THOROUGHLY BUT SEEMS TO WORK OK.
+  D_h[,colnames(adult.data)[-length(colnames(adult.data))]] %>% mutate_if(is.character,as.factor) 
+  # Change characters to factors! THIS IS NOT TESTED THOROUGHLY BUT SEEMS TO WORK OK.
   # We also rearrange the columns to match the column orders in the original data. 
   # This is an implementation detail that is done to be able to easier calculated sparsity etc in the pre-processing. 
 }
@@ -230,17 +231,26 @@ if (CLI.args[1] %in% c("ANN", "logreg", "randomForest")){
   stop("Please supply either 'ANN', 'logreg' or 'randomForest' as the first CLI argument.")
 }
 
+# For testing (load the predictions from Ranger):
+# data.table::fwrite(list(preds), file = "ranger_preds.csv")
+# stop("Stop the code after saving the predictions!")
+# preds <- read.csv("ranger_preds.csv", header = F)
+# print(class(preds))
+# preds <- as.numeric(preds[[1]])
+
 #preds_sorted <- sort(preds, decreasing = F, index.return = T) # Vil tro det kanskje ikke er dette de er på jakt etter!?
 #preds_sorted_values <- preds_sorted$x[1:10] # Skal egentlig ha de 100 første! Gjør dette for testing nå!
 #preds_sorted_indices <- preds_sorted$ix[1:10]
 #new_predicted_data <- cbind(test[preds_sorted_indices,colnames(adult.data)], "y_pred" = preds_sorted_values)
-new_predicted_data <- data.frame(cbind(test[,colnames(adult.data)], "y_pred" = preds)) 
-H <- new_predicted_data[new_predicted_data$y_pred < 0.5, ] 
-H <- H[1:(CLI.args[2]),-which(names(new_predicted_data) %in% c("y_pred","y"))] # Prøver bare med de 10 første foreløpig.
 # We select the 100 test observations with the lowest predicted probability? Perhaps this is not what they mean by 
 # "the first 100 observations with an undesirable prediction"? 
 # I have gone away from this for now!
 # The code has been left here though, since I could probably discuss this in the report!
+
+new_predicted_data <- data.frame(cbind(adult.data[-train_indices, ], "y_pred" = preds)) 
+H <- new_predicted_data[new_predicted_data$y_pred < 0.5, ] 
+s <- sample(1:nrow(H), size = CLI.args[2]) # Sample CLI.args[2] random points from H.
+H <- H[s,-which(names(new_predicted_data) %in% c("y_pred","y"))] 
 
 K <- as.numeric(CLI.args[3]) # Assume that the third command line input is an integer. 
 

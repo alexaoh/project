@@ -46,7 +46,7 @@ de.normalize.data <- function(data, continuous_vars, m.list, M.list){
 }
 
 make.train.and.test <- function(data, train.ratio = 2/3){
-  # Make the train and test data. Return all the four parts as a list.
+  # Make the train and test data. Return all the four parts as a list. We also return the train indices.
   sample.size <- floor(nrow(data) * train.ratio)
   train.indices <- sample(1:nrow(data), size = sample.size)
   train <- data[train.indices, ]
@@ -57,7 +57,7 @@ make.train.and.test <- function(data, train.ratio = 2/3){
   x_test <- test[,-which(names(test) == "y")] # Testing covariates. 
   y_test <- test[,c("y")] # Testing label.
   return(list("x_train" = x_train, "y_train" = y_train, "x_test" = x_test, "y_test" = y_test, 
-              "train" = train, "test" = test))
+              "train_indices" = train.indices))
 }
 
 
@@ -66,10 +66,10 @@ fit.ANN <- function(x_train, y_train, x_test, y_test){
   # Fit the ANN and return the keras object for the ANN.
   
   ANN <- keras_model_sequential() %>%
-    layer_dense(units = 180, activation = 'relu', input_shape = c(ncol(x_train))) %>% # ,kernel_regularizer = regularizer_l1(1e-5)) %>%
-    layer_dropout(0.2) %>% 
-    layer_dense(units = 18, activation = 'relu') %>%
-    layer_dropout(0.2) %>% 
+    layer_dense(units = 18, activation = 'relu', input_shape = c(ncol(x_train))) %>% # ,kernel_regularizer = regularizer_l1(1e-5)) %>%
+    #layer_dropout(0.2) %>% 
+    #layer_dense(units = 18, activation = 'relu') %>%
+    #layer_dropout(0.2) %>% 
     #layer_dense(units = 100, activation = 'relu') %>% 
     #layer_dropout(0.2) %>% 
     #layer_dense(units = 60, activation = 'relu') %>% 
@@ -84,8 +84,8 @@ fit.ANN <- function(x_train, y_train, x_test, y_test){
                   metrics = c('accuracy'))
   
   # train (fit)
-  history <- ANN %>% fit(x_train, y_train, epochs = 40, 
-                         batch_size = 128, validation_split = 0.2)
+  history <- ANN %>% fit(x_train, y_train, epochs = 30, 
+                         batch_size = 1024, validation_split = 0.2)
   # plot
   plot(history)
   
@@ -97,13 +97,11 @@ fit.ANN <- function(x_train, y_train, x_test, y_test){
   # evaluate on test data. 
   ANN %>% evaluate(x_test, y_test)
   
-  y_pred <- ANN %>% predict(x_test) %>% `>=`(0.5) #%>% k_cast("int32")
+  y_pred <- ANN %>% predict(x_test) #%>% `>=`(0.5) #%>% k_cast("int32")
   #y_pred <- as.array(y_pred) # My previous solution seems to have stopped working for some reason?
-  y_pred <- as.numeric(y_pred)
-  tab <- table("Predictions" = y_pred, "Labels" = y_test)
-  print(confusionMatrix(factor(y_pred), factor(y_test)))
+  print(confusionMatrix(factor(as.numeric(y_pred %>% `>=`(0.5))), factor(y_test)))
   print(roc(response = y_test, predictor = as.numeric(y_pred), plot = T))
-  results <- HMeasure(y_test,as.numeric(y_pred),threshold=0.15)
+  results <- HMeasure(y_test,as.numeric(y_pred),threshold=0.5)
   print(results$metrics$AUC)
   return(ANN)
 }
@@ -113,11 +111,11 @@ fit.logreg <- function(x_train, y_train, x_test, y_test){
   lin_mod <- glm(y ~ ., family=binomial(link='logit'), data=data.frame(cbind(x_train, "y" = y_train)))
   print(summary(lin_mod))
   y_pred_logreg <- predict(lin_mod, data.frame(x_test), type = "response")
-  y_pred_logreg[y_pred_logreg >= 0.5] <- 1
-  y_pred_logreg[y_pred_logreg < 0.5] <- 0
-  print(confusionMatrix(factor(y_pred_logreg), factor(y_test)))
+  #y_pred_logreg[y_pred_logreg >= 0.5] <- 1
+  #y_pred_logreg[y_pred_logreg < 0.5] <- 0
+  print(confusionMatrix(factor(as.numeric(y_pred_logreg %>% `>=`(0.5))), factor(y_test)))
   print(roc(response = y_test, predictor = as.numeric(y_pred_logreg), plot = T))
-  results <- HMeasure(y_test,as.numeric(y_pred_logreg),threshold=0.15)
+  results <- HMeasure(y_test,as.numeric(y_pred_logreg),threshold=0.5)
   print(results$metrics$AUC)
   return(lin_mod)
 }
@@ -128,10 +126,11 @@ fit.random.forest <- function(x_train, y_train, x_test, y_test){
                   probability = TRUE,
                   importance = "impurity",
                   mtry = sqrt(13))
-  pred.rf <- predict(model, data = x_test)
-  results <- HMeasure(y_test,pred.rf$predictions[,2],threshold=0.15)
+  pred.rf <- predict(model, data = x_test)$predictions[,2]
+  print(confusionMatrix(factor(as.numeric(pred.rf %>% `>=`(0.5))), factor(y_test)))
+  results <- HMeasure(y_test,pred.rf,threshold=0.5)
   print(results$metrics$AUC)
-  print(roc(response = y_test, predictor = as.numeric(pred.rf$predictions[,2]), plot = T))
+  print(roc(response = y_test, predictor = as.numeric(pred.rf), plot = T))
   return(model)
 }
 
