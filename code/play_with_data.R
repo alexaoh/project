@@ -28,7 +28,7 @@ summary(cap_gain)
 boxplot(cap_gain)
 length(cap_gain[cap_gain != 0])
 length(cap_gain) #Most entries are 0! Thus, this variable is extremely difficult to model!
-head(sort(cap_gain, decreasing = T))
+head(sort(cap_gain, decreasing = T), 1000)
 cap_gain <- cap_gain[cap_gain < 50000]
 summary(cap_gain)
 boxplot(cap_gain)

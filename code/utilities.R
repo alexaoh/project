@@ -60,6 +60,20 @@ make.train.and.test <- function(data, train.ratio = 2/3){
               "train_indices" = train.indices))
 }
 
+plot_tree <- function(index){
+  # Helper function to plot each tree nicely. Also prints the formula that was used to construct the tree. 
+  par(mar = c(1,1,1,1))
+  cat("Formula fitted: ")
+  print(total_formulas[[index]])
+  cat("\n")
+  tree.mod <- T_j[[index]]
+  print(summary(tree.mod))
+  if (tree.mod$method == "class"){
+    rpart.plot::prp(tree.mod, extra = 4)  
+  } else {
+    rpart.plot::prp(tree.mod)
+  }
+}
 
 ######################## Fit prediction models.
 fit.ANN <- function(x_train, y_train, x_test, y_test){
@@ -161,8 +175,11 @@ gower_D_h <- function(x_h, D_h, norm.factors){
       for (j in 1:p){ # Assuming that the features are already normalized! Perhaps they need to be normalized again!?
         d_j <- D_h[i,j]
         if (dtypes[j] == "integer"){ # If we normalize we need to have "numeric" here!
-          R_j <- norm.factors[j] # normalization factor. This should not be zero or one!!
-          g <- g + 1/R_j*abs(d_j-x_h[,j])
+          m <- norm.factors[[j]][1]
+          M <- norm.factors[[j]][2]
+          z <- abs(d_j-x_h[,j])
+          R_j <- (M-m)*z/(z-m)
+          g <- g + 1/R_j*z
         } else if (dtypes[j] == "factor"){
           if (x_h[,j] != d_j){
             g <- g + 1

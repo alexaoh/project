@@ -30,7 +30,7 @@ for (i in CLI.args){
 }
 
 # Just for testing right now, should be removed later!
-#CLI.args <- c("randomForest",100,10000, FALSE, TRUE)
+# CLI.args <- c("logreg",100,10000, FALSE, TRUE)
 
 ########################################### Build ML models for classification: which individuals obtain an income more than 50k yearly?
 set.seed(42) # Set seed to begin with!
@@ -61,11 +61,13 @@ make.data.for.ANN <- function(){
 
 
 # # For good performance with the ANN the data should be normalized! For the rest of the methods it does not really matter I think!
-# adult.data.normalized <- normalize.data(data = adult.data, continuous_vars = cont) # returns list with data, mins and maxs.
-# summary(adult.data.normalized)
-# adult.data <- adult.data.normalized[[1]] # we are only interested in the data for now.
-# # Make the design matrix for the DNN.
-# adult.data <- make.data.for.ANN()
+if (CLI.args[1] == "ANN"){
+  adult.data.normalized <- normalize.data(data = adult.data, continuous_vars = cont) # returns list with data, mins and maxs.
+  #summary(adult.data.normalized)
+  adult.data <- adult.data.normalized[[1]] # We are only interested in the data for now.
+  # Make the design matrix for the DNN.
+  adult.data <- make.data.for.ANN() # Should probably make a copy like in the other branch! I can fix this when merging the branches!
+} 
 
 # Make train and test data.
 train_and_test_data <- make.train.and.test(data = adult.data) # The function returns two matrices (x) and two vectors (y). 
@@ -79,14 +81,16 @@ y_test <- train_and_test_data[[4]]
 # The train indices are used to construct H later. 
 train_indices <- train_and_test_data[[5]]
 
-# Fit ANN.
-#ANN <- fit.ANN(as.matrix(x_train), y_train, as.matrix(x_test), y_test)
 
-# Fit logreg.
-#logreg <- fit.logreg(x_train, y_train, x_test, y_test)
-
-# Fit random forest. We use this for now (forget the ANN, since it sucks).
-random.forest <- fit.random.forest(x_train, y_train, x_test, y_test)
+if (CLI.args[1] == "ANN"){
+  ANN <- fit.ANN(as.matrix(x_train), y_train, as.matrix(x_test), y_test)
+} else if (CLI.args[1] == "logreg"){
+  logreg <- fit.logreg(x_train, y_train, x_test, y_test)
+} else if (CLI.args[1] == "randomForest"){
+  random.forest <- fit.random.forest(x_train, y_train, x_test, y_test)
+} else {
+  stop("We have only implemented three prediction models: 'ANN', 'logreg' or 'randomForest'.")
+}
 
 # This is used to return the predicted probabilities according to the model we want to use (for later).
 prediction_model <- function(x_test, method){
@@ -96,7 +100,7 @@ prediction_model <- function(x_test, method){
   } else if (method == "ANN"){
     return(as.numeric(ANN %>% predict(data.matrix(x_test))))
   } else if (method == "randomForest"){
-  return(predict(random.forest, x_test)$predictions[,2]) 
+    return(predict(random.forest, x_test)$predictions[,2]) 
   } else {
     stop("Methods 'logreg', 'ANN' and 'randomForest' are the only implemented thus far")
   }
@@ -133,44 +137,30 @@ for (i in 1:q){
   if (mut_datatypes[[i]] == "factor"){ 
     #T_j[[i]] <- tree(tot_form, data = adult.data, control = tree.control(nobs = nrow(adult.data), mincut = 80, minsize = 160), split = "gini", x = T)
     #T_j[[i]] <- rpart(tot_form, data = adult.data, method = "class", control = rpart.control(minsplit = 2, minbucket = 1)) 
-    T_j[[i]] <- rpart(tot_form, data = adult.data, method = "class", control = rpart.control(minbucket = 5, cp = 0.001)) 
+    T_j[[i]] <- rpart(tot_form, data = adult.data, method = "class", control = rpart.control(minbucket = 5, cp = 1e-4)) 
     # Method = "class": Uses Gini index, I believe. Check the docs again. 
   } else if (mut_datatypes[[i]] == "integer" || mut_datatypes[[i]] == "numeric"){ # mean squared error.
     #T_j[[i]] <- tree(tot_form, data = adult.data, control = tree.control(nobs = nrow(adult.data), mincut = 5, minsize = 10), split = "deviance", x = T)
     #T_j[[i]] <- rpart(tot_form, data = adult.data, method = "anova", control = rpart.control(minsplit = 2, minbucket = 1)) 
-    T_j[[i]] <- rpart(tot_form, data = adult.data, method = "anova", control = rpart.control(minbucket = 5, cp = 0.001)) 
+    T_j[[i]] <- rpart(tot_form, data = adult.data, method = "anova", control = rpart.control(minbucket = 5, cp = 1e-8)) 
     # Method = "anova": SST-(SSL+SSR). Check out the docs. This should (hopefully) be the same as Mean Squared Error. 
   } else { 
     stop("Error: Datatypes need to be either factor or integer/numeric.") # We need to use "numeric" if we have normalized the data!
   } 
 }
 
-plot_tree <- function(index){
-  # Helper function to plot each tree nicely (to see if it makes sense). Also prints the formula that was used to construct the tree. 
-  par(mar = c(1,1,1,1))
-  cat("Formula fitted: ")
-  print(total_formulas[[index]])
-  cat("\n")
-  tree.mod <- T_j[[index]]
-  print(summary(tree.mod))
-  if (tree.mod$method == "class"){
-    rpart.plot::prp(tree.mod, extra = 4)  
-  } else {
-    rpart.plot::prp(tree.mod)
-  }
-}
-
-plot_tree(1)
-plot_tree(2)
-plot_tree(3)
-plot_tree(4)
-plot_tree(5)
-plot_tree(6)
-plot_tree(7)
-plot_tree(8)
-plot_tree(9)
-plot_tree(10)
-plot_tree(11)
+# Med så liten cp blir det et problem å plotte trærne!
+# plot_tree(1)
+# plot_tree(2)
+# plot_tree(3)
+# plot_tree(4)
+# plot_tree(5)
+# plot_tree(6)
+# plot_tree(7)
+# plot_tree(8)
+# plot_tree(9)
+# plot_tree(10)
+# plot_tree(11)
 
 ############################### Generate counterfactuals based on trees etc. 
 # Generate counterfactual per sample. 
@@ -280,14 +270,14 @@ post.processing <- function(D_h, H, data){ # 'data' is used to calculate normali
   # Remove the rows of D_h (per point) not satisfying the listed criteria. 
   
   # Find the normalization factors for Gower.
-  norm.factors <- c()
-  for (n in colnames(data)){
-    colm <- (data %>% select(n))[[1]]
+  norm.factors <- list()
+  for (i in 1:length(colnames(data))){
+    colm <- (data %>% select(colnames(data)[i]))[[1]]
     if (class(colm) == "integer" || class(colm) == "numeric"){
-      norm.factors <- c(norm.factors, max(colm)) # Perhaps use min and max scaling like earlier!? I am testing this now!
-      # Could use a list and append a vector of max and min of the column!
+      q <- quantile(colm, c(0.01, 0.99))
+      norm.factors[[i]] <- c(q[1][[1]],q[2][[1]]) # Using min-max scaling, but with 0.01 and 0.99 quantiles!
     } else {
-      norm.factors <- c(norm.factors, NA)
+      norm.factors[[i]] <- NA
     }
   }
   
