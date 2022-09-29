@@ -10,7 +10,6 @@
 rm(list = ls())  # make sure to remove previously loaded variables into the Session.
 
 setwd("/home/ajo/gitRepos/project")
-library(tree) # For regression trees. This is not needed anymore I believe. 
 library(rpart) # Try this for building CART trees instead!
 library(rpart.plot) # For plotting rpart trees in a more fancy way.
 library(dplyr)
@@ -18,6 +17,7 @@ library(keras) # for deep learning models.
 library(pROC) # For ROC curve.
 library(hmeasure) # For AUC (I am testing this for comparison to pROC).
 library(caret) # For confusion matrix.
+library(ranger) # For implementing a random forest classifier.
 
 # Source some of the needed code. 
 source("code/utilities.R")
@@ -30,7 +30,7 @@ for (i in CLI.args){
 }
 
 # Just for testing right now, should be removed later!
-CLI.args <- c("ANN",100,10000, FALSE, TRUE)
+# CLI.args <- c("logreg",100,10000, FALSE, TRUE)
 
 ########################################### Build ML models for classification: which individuals obtain an income more than 50k yearly?
 set.seed(42) # Set seed to begin with!
@@ -41,15 +41,11 @@ if (CLI.args[5]){
 } else if (CLI.args[5] != T){
   load("data/adult_data_categ.RData", verbose = T) # Categorical factors as they come originally. 
 } else {
-  stop("Please supply either T (binarized data) of F (categorical data) as the fift CLI argument.")
+  stop("Please supply either T (binarized data) of F (categorical data) as the fit CLI argument.")
 }
 
 # List of continuous variables.
 cont <- c("age","fnlwgt","education_num","capital_gain","capital_loss","hours_per_week")
-
-adult.data.normalized <- normalize.data(data = adult.data, continuous_vars = cont) # returns list with data, mins and maxs.
-summary(adult.data.normalized)
-adult.data <- adult.data.normalized[[1]] # we are only interested in the data for now.
 
 make.data.for.ANN <- function(){
   # Make design matrix via one-hot encoding of the categorical variables. 
@@ -63,7 +59,15 @@ make.data.for.ANN <- function(){
   return(cbind(train_numbers, train_encoded, adult.data["y"]))
 }
 
-adult.data <- make.data.for.ANN()
+
+# # For good performance with the ANN the data should be normalized! For the rest of the methods it does not really matter I think!
+if (CLI.args[1] == "ANN"){
+  adult.data.normalized <- normalize.data(data = adult.data, continuous_vars = cont) # returns list with data, mins and maxs.
+  #summary(adult.data.normalized)
+  adult.data <- adult.data.normalized[[1]] # We are only interested in the data for now.
+  # Make the design matrix for the DNN.
+  adult.data <- make.data.for.ANN() # Should probably make a copy like in the other branch! I can fix this when merging the branches!
+} 
 
 # Make train and test data.
 train_and_test_data <- make.train.and.test(data = adult.data) # The function returns two matrices (x) and two vectors (y). 
@@ -74,35 +78,41 @@ y_train <- train_and_test_data[[2]]
 x_test <- train_and_test_data[[3]]
 y_test <- train_and_test_data[[4]]
 
+# The train indices are used to construct H later. 
+train_indices <- train_and_test_data[[5]]
 
-# These two are used when I want to make dataframes later, in order to easier keep all correct datatypes in the columns. 
-train <- train_and_test_data[[5]]
-test <- train_and_test_data[[6]]
 
-# Fit ANN.
-ANN <- fit.ANN(as.matrix(x_train), y_train, as.matrix(x_test), y_test)
-
-# Fit logreg.
-logreg <- fit.logreg(x_train, y_train, x_test, y_test)
+if (CLI.args[1] == "ANN"){
+  ANN <- fit.ANN(as.matrix(x_train), y_train, as.matrix(x_test), y_test)
+} else if (CLI.args[1] == "logreg"){
+  logreg <- fit.logreg(x_train, y_train, x_test, y_test)
+} else if (CLI.args[1] == "randomForest"){
+  random.forest <- fit.random.forest(x_train, y_train, x_test, y_test)
+} else {
+  stop("We have only implemented three prediction models: 'ANN', 'logreg' or 'randomForest'.")
+}
 
 # This is used to return the predicted probabilities according to the model we want to use (for later).
 prediction_model <- function(x_test, method){
   # This returns the predicted probabilities of class 1 (>= 50k per year).
   if (method == "logreg"){
-    return(predict(logreg, data.frame(x_test), type = "response")) # Could also simply have used "test" here. 
+    return(predict(logreg, data.frame(x_test), type = "response")) 
   } else if (method == "ANN"){
     return(as.numeric(ANN %>% predict(data.matrix(x_test))))
+  } else if (method == "randomForest"){
+    return(predict(random.forest, x_test)$predictions[,2]) 
   } else {
-    stop("Methods 'logreg' and 'ANN' are the only two implemented thus far")
+    stop("Methods 'logreg', 'ANN' and 'randomForest' are the only implemented thus far")
   }
 }
 
+# This is not relevant anymore :)
 # Predictions from each of the two models (just for show).
-d <- data.frame("logreg" = prediction_model(x_test, method = "logreg"), 
-                "ANN" = prediction_model(data.matrix(x_test), method = "ANN"))
-
-head(d, 20) # The predictions look relatively similar with the two methods. 
-tail(d, 20) # There are a few differences, but not many. 
+# d <- data.frame("logreg" = prediction_model(x_test, method = "logreg"), 
+#                 "ANN" = prediction_model(data.matrix(x_test), method = "ANN"))
+# 
+# head(d, 20) # The predictions look relatively similar with the two methods. 
+# tail(d, 20) # There are a few differences, but not many. 
 
 ############################################ This is where the generation algorithm begins. 
 data_min_response <- adult.data[,-which(names(adult.data) == "y")] # All covariates (removed the response from the data frame).
@@ -127,46 +137,30 @@ for (i in 1:q){
   if (mut_datatypes[[i]] == "factor"){ 
     #T_j[[i]] <- tree(tot_form, data = adult.data, control = tree.control(nobs = nrow(adult.data), mincut = 80, minsize = 160), split = "gini", x = T)
     #T_j[[i]] <- rpart(tot_form, data = adult.data, method = "class", control = rpart.control(minsplit = 2, minbucket = 1)) 
-    T_j[[i]] <- rpart(tot_form, data = adult.data, method = "class", control = rpart.control(minbucket = 5, cp = 0.001)) 
+    T_j[[i]] <- rpart(tot_form, data = adult.data, method = "class", control = rpart.control(minbucket = 5, cp = 1e-4)) 
     # Method = "class": Uses Gini index, I believe. Check the docs again. 
-  } else if (mut_datatypes[[i]] == "numeric"){ # mean squared error.
+  } else if (mut_datatypes[[i]] == "integer" || mut_datatypes[[i]] == "numeric"){ # mean squared error.
     #T_j[[i]] <- tree(tot_form, data = adult.data, control = tree.control(nobs = nrow(adult.data), mincut = 5, minsize = 10), split = "deviance", x = T)
     #T_j[[i]] <- rpart(tot_form, data = adult.data, method = "anova", control = rpart.control(minsplit = 2, minbucket = 1)) 
-    T_j[[i]] <- rpart(tot_form, data = adult.data, method = "anova", control = rpart.control(minbucket = 5, cp = 0.001)) 
+    T_j[[i]] <- rpart(tot_form, data = adult.data, method = "anova", control = rpart.control(minbucket = 5, cp = 1e-8)) 
     # Method = "anova": SST-(SSL+SSR). Check out the docs. This should (hopefully) be the same as Mean Squared Error. 
   } else { 
-    stop("Error: Datatypes need to be either factor or numeric.")
-  } # Flere av trærne som blir kun en root node. Mulig noe må endres på!?
+    stop("Error: Datatypes need to be either factor or integer/numeric.") # We need to use "numeric" if we have normalized the data!
+  } 
 }
 
-plot_tree <- function(index){
-  # Helper function to plot each tree nicely (to see if it makes sense). Also prints the formula that was used to construct the tree. 
-  par(mar = c(1,1,1,1))
-  cat("Formula fitted: ")
-  print(total_formulas[[index]])
-  cat("\n")
-  tree.mod <- T_j[[index]]
-  print(summary(tree.mod))
-  if (tree.mod$method == "class"){
-    rpart.plot::prp(tree.mod, extra = 4)  
-  } else {
-    rpart.plot::prp(tree.mod)
-  }
-  
-}
-
-plot_tree(1)
-plot_tree(2)
-plot_tree(3)
-plot_tree(4)
-plot_tree(5)
-plot_tree(6)
-plot_tree(7)
-plot_tree(8)
-plot_tree(9)
-plot_tree(10)
-plot_tree(11)
-plot_tree(12)
+# Med så liten cp blir det et problem å plotte trærne!
+# plot_tree(1)
+# plot_tree(2)
+# plot_tree(3)
+# plot_tree(4)
+# plot_tree(5)
+# plot_tree(6)
+# plot_tree(7)
+# plot_tree(8)
+# plot_tree(9)
+# plot_tree(10)
+# plot_tree(11)
 
 ############################### Generate counterfactuals based on trees etc. 
 # Generate counterfactual per sample. 
@@ -174,7 +168,6 @@ generate <- function(h, K){ # K = 10000 is used in the article for the experimen
   # Instantiate entire D_h-matrix for all features. 
   D_h <- as.data.frame(matrix(data = rep(NA, K*p), nrow = K, ncol = p))
   colnames(D_h) <- c(fixed_features, mut_features)
-  
 
   # Fill the matrix D_h with copies of the vectors of fixed features. 
   # All rows should have the same value in all the fixed features. 
@@ -186,7 +179,7 @@ generate <- function(h, K){ # K = 10000 is used in the article for the experimen
   for (j in 1:q){
     feature_regressed <- mut_features[j]
     feature_regressed_dtype <- mut_datatypes[[j]]
-    
+
     d <- rep(NA, K) # Empty vector of length K. 
     # Will be inserted into D_h later (could col-bind also, but chose to instantiate entire D_h from the beginning).
     
@@ -197,19 +190,22 @@ generate <- function(h, K){ # K = 10000 is used in the article for the experimen
       largest_class <- sorted$x
       largest_index <- sorted$ix
       if (feature_regressed_dtype == "factor"){
-        s <- runif(1)
-        if (s >= largest_class[1]){ # This only works for two classes at this point!
-          d[i] <- levels(adult.data[,feature_regressed])[largest_index[2]]
-        } else {
-          d[i] <- levels(adult.data[,feature_regressed])[largest_index[1]]
-        }
+        # s <- runif(1)
+        # if (s >= largest_class[1]){ # This only works for two classes at this point! Perhaps I can simply use the sample function with the list of probabilities?
+        #   d[i] <- levels(adult.data[,feature_regressed])[largest_index[2]]
+        # } else {
+        #   d[i] <- levels(adult.data[,feature_regressed])[largest_index[1]]
+        # }
+        # I think the following is a better solution. This works for the categorical data as well!
+        d[i] <- sample(x = levels(adult.data[,feature_regressed])[largest_index], size = 1, prob = largest_class) 
       } else { # Numeric
         d[i] <- end_node_distr
       }
     }
     D_h[,u+j] <- d # Add all the tree samples based on the jth mutable feature to the next column. 
   }
-  D_h[,colnames(adult.data)[-length(colnames(adult.data))]] %>% mutate_if(is.character,as.factor) # Change characters to factors! THIS IS NOT TESTED THOROUGHLY BUT SEEMS TO WORK OK.
+  D_h[,colnames(adult.data)[-length(colnames(adult.data))]] %>% mutate_if(is.character,as.factor) 
+  # Change characters to factors! THIS IS NOT TESTED THOROUGHLY BUT SEEMS TO WORK OK.
   # We also rearrange the columns to match the column orders in the original data. 
   # This is an implementation detail that is done to be able to easier calculated sparsity etc in the pre-processing. 
 }
@@ -218,23 +214,32 @@ generate <- function(h, K){ # K = 10000 is used in the article for the experimen
 # Here we say that we want to explain predictions that are predicted as 0 (less than 50k a year). We want to find out what we need to change to change
 # this prediction into 1. This is done in the post-processing after generating all the possible counterfactuals. According to the experiments in the article
 # we only generate one counterfactual per factual, for the first 100 undesirable observations we want to explain.
-if (CLI.args[1] %in% c("ANN", "logreg")){
+if (CLI.args[1] %in% c("ANN", "logreg", "randomForest")){
   preds <- prediction_model(x_test, method = CLI.args[1]) 
 } else {
-  stop("Please supply either 'ANN' or 'logreg' as the first CLI argument.")
+  stop("Please supply either 'ANN', 'logreg' or 'randomForest' as the first CLI argument.")
 }
+
+# For testing (load the predictions from Ranger):
+# data.table::fwrite(list(preds), file = "ranger_preds.csv")
+# stop("Stop the code after saving the predictions!")
+# preds <- read.csv("ranger_preds.csv", header = F)
+# print(class(preds))
+# preds <- as.numeric(preds[[1]])
 
 #preds_sorted <- sort(preds, decreasing = F, index.return = T) # Vil tro det kanskje ikke er dette de er på jakt etter!?
 #preds_sorted_values <- preds_sorted$x[1:10] # Skal egentlig ha de 100 første! Gjør dette for testing nå!
 #preds_sorted_indices <- preds_sorted$ix[1:10]
 #new_predicted_data <- cbind(test[preds_sorted_indices,colnames(adult.data)], "y_pred" = preds_sorted_values)
-new_predicted_data <- data.frame(cbind(test[,colnames(adult.data)], "y_pred" = preds)) 
-H <- new_predicted_data[new_predicted_data$y_pred < 0.5, ] 
-H <- H[1:(CLI.args[2]),-which(names(new_predicted_data) %in% c("y_pred","y"))] # Prøver bare med de 10 første foreløpig.
 # We select the 100 test observations with the lowest predicted probability? Perhaps this is not what they mean by 
 # "the first 100 observations with an undesirable prediction"? 
 # I have gone away from this for now!
 # The code has been left here though, since I could probably discuss this in the report!
+
+new_predicted_data <- data.frame(cbind(adult.data[-train_indices, ], "y_pred" = preds)) 
+H <- new_predicted_data[new_predicted_data$y_pred < 0.5, ] 
+s <- sample(1:nrow(H), size = CLI.args[2]) # Sample CLI.args[2] random points from H.
+H <- H[s,-which(names(new_predicted_data) %in% c("y_pred","y"))] 
 
 K <- as.numeric(CLI.args[3]) # Assume that the third command line input is an integer. 
 
@@ -261,8 +266,21 @@ if (CLI.args[4]){
 
 ######################################## Post-processing.
 
-post.processing <- function(D_h, H){
+post.processing <- function(D_h, H, data){ # 'data' is used to calculate normalization factors for Gower.
   # Remove the rows of D_h (per point) not satisfying the listed criteria. 
+  
+  # Find the normalization factors for Gower.
+  norm.factors <- list()
+  for (i in 1:length(colnames(data))){
+    colm <- (data %>% select(colnames(data)[i]))[[1]]
+    if (class(colm) == "integer" || class(colm) == "numeric"){
+      q <- quantile(colm, c(0.01, 0.99))
+      norm.factors[[i]] <- c(q[1][[1]],q[2][[1]]) # Using min-max scaling, but with 0.01 and 0.99 quantiles!
+    } else {
+      norm.factors[[i]] <- NA
+    }
+  }
+  
   
   fulfill_crit3_D_h <- function(D_h, c, pred.method){
     D_h_crit3 <- D_h[prediction_model(D_h, method = pred.method) >= c,] # prediction_model(*) is the R function that predicts 
@@ -284,10 +302,10 @@ post.processing <- function(D_h, H){
   ##### Fulfilling criterion 4.
   # Calculate Sparsity and Gower's distance for each D_h (per point).
   
-  add_metrics_D_h_all_points <- function(D_h_pp, H_l){
+  add_metrics_D_h_all_points <- function(D_h_pp, H_l, norm.factors){
     # Calculates sparsity and Gower for all counterfactuals and adds the columns to each respective D_h.
     for (i in 1:length(D_h_pp)){
-      D_h_pp[[i]] <- gower_D_h(H_l[i,], D_h_pp[[i]])
+      D_h_pp[[i]] <- gower_D_h(H_l[i,], D_h_pp[[i]], norm.factors)
       D_h_pp[[i]] <- sparsity_D_h(H_l[i,], D_h_pp[[i]])
     }
     return(D_h_pp)
@@ -297,11 +315,11 @@ post.processing <- function(D_h, H){
   crit3_D_h_per_point <- fulfill_crit3(D_h_pp = D_h, c = 0.5, pred.method = CLI.args[1]) # Fulfill criterion 3 for all (unique) generated possible counterfactuals. 
   
   # Add sparsity and Gower distance to each row. 
-  crit4_D_h_all_points <- add_metrics_D_h_all_points(crit3_D_h_per_point,H)
+  crit4_D_h_all_points <- add_metrics_D_h_all_points(crit3_D_h_per_point,H, norm.factors)
   return(crit4_D_h_all_points) # Return D_h with Gower and sparsity added as columns. Also, non-valid counterfactuals are removed. 
 }
 
-D_h_post_processed <- post.processing(D_h_per_point, H)
+D_h_post_processed <- post.processing(D_h_per_point, H, adult.data[,-14])
 
 ############# Do we want several counterfactuals per factual or only one? Below we select one!
 generate_one_counterfactual_D_h <- function(D_h){
