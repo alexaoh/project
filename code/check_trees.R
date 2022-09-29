@@ -60,7 +60,11 @@ tab3[2]/sum(tab3)
 tab4[1]/sum(tab4)
 tab4[2]/sum(tab4)
 
-(tab5 <- table(adult.data %>% filter(age >= 64 & sex == " Male") %>% select(workclass)))
+(tab5 <- table(adult.data %>% filter(age >= 89 & sex == " Male") %>% select(workclass)))
+tab5[1]/sum(tab5)
+tab5[2]/sum(tab5)
+
+(tab5 <- table(adult.data %>% filter(age <75 & age < 67 & age >= 64 & sex == " Male") %>% select(workclass)))
 tab5[1]/sum(tab5)
 tab5[2]/sum(tab5)
 # Looks good!

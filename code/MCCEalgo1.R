@@ -30,7 +30,7 @@ for (i in CLI.args){
 }
 
 # Just for testing right now, should be removed later!
-# CLI.args <- c("logreg",100,10000, FALSE, TRUE)
+CLI.args <- c("logreg",100,10000, FALSE, TRUE)
 
 ########################################### Build ML models for classification: which individuals obtain an income more than 50k yearly?
 set.seed(42) # Set seed to begin with!
