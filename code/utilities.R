@@ -172,13 +172,16 @@ gower_D_h <- function(x_h, D_h, norm.factors){
       g <- 0 # Sum for Gower distance.
       p <- ncol(x_h)
       
-      for (j in 1:p){ # Assuming that the features are already normalized! Perhaps they need to be normalized again!?
+      for (j in 1:p){ 
         d_j <- D_h[i,j]
-        if (dtypes[j] == "integer" || dtypes[j] == "integer"){ # If we normalize we need to have "numeric" here!
+        if (dtypes[j] == "integer" || dtypes[j] == "numeric"){ # If we normalize we need to have "numeric" here.
           m <- norm.factors[[j]][1]
           M <- norm.factors[[j]][2]
           z <- abs(d_j-x_h[,j])
-          R_j <- (M-m)*z/(z-m)
+          #R_j <- (M-m)*z/(z-m)
+          # Or alternatively, we simply divide by M-m
+          R_j <- M-m # I think this solution makes more sense! We assume that the data is well modeled earlier, such that 
+          # z does not become larger than R_j and the total factor delta_G will stay between 0 and 1. 
           if (z != 0){ 
             g <- g + 1/R_j*z
           }
@@ -190,7 +193,7 @@ gower_D_h <- function(x_h, D_h, norm.factors){
         }
       }
       D_h[i,"gower"] <- g/p
-      #D_h[i,"gowerpack"] <- gower_dist(x_h,D_h[i,colnames(x_h)])
+      D_h[i,"gowerpack"] <- gower_dist(x_h,D_h[i,colnames(x_h)])
     }
   }
   return(D_h)
