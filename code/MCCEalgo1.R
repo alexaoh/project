@@ -47,43 +47,49 @@ if (CLI.args[5]){
 # List of continuous variables.
 cont <- c("age","fnlwgt","education_num","capital_gain","capital_loss","hours_per_week")
 
-make.data.for.ANN <- function(){
-  # Make design matrix via one-hot encoding of the categorical variables. 
-  train_text <- adult.data[,-which(names(adult.data) %in% cont)]
-  train_text <- train_text[,-ncol(train_text)] # Remove the label!
-  train_numbers <- adult.data[,which(names(adult.data) %in% cont)]
-  encoded <- caret::dummyVars(" ~ .", data = train_text, fullRank = F)
-  train_encoded <- data.frame(predict(encoded, newdata = train_text))
+if (CLI.args[1] == "ANN"){
+  adult.data.onehot <- data.frame(adult.data) # make a copy of the dataframe for one hot encoding in ANN.
+  tracemem(adult.data) == tracemem(adult.data.onehot) # it is a deep copy.
+  data.table::address(adult.data)
+  data.table::address(adult.data.onehot)
+  # The memory addresses are different. 
+
+  # The data is normalized (for performance) when we want to use the ANN as a predictive model. 
+  adult.data.normalized <- normalize.data(data = adult.data.onehot, continuous_vars = cont) # returns list with data, mins and maxs.
+  #summary(adult.data.normalized)
+  adult.data.onehot <- adult.data.normalized[[1]] # We are only interested in the data for now.
+  # adult.data <- adult.data.normalized[[1]] # Could normalize the "normal" adult.data as well, not sure if this is needed at this point. 
+
+  # Make the design matrix for the DNN.
+  adult.data.onehot <- make.data.for.ANN(adult.data.onehot, cont) # Compare this with the model.matrix approach from below, if time. 
   
-  # This makes a not-fullrank dataset! (which I think we want!). Model.matrix makes a fullRank by default!!
-  return(cbind(train_numbers, train_encoded, adult.data["y"]))
+  # One-hot encode the data if we are fitting an ANN. Otherwise we simply keep the same data as earlier. 
+  # adult.data.onehot <- as.data.frame(model.matrix(~.,data = adult.data.onehot)) # We keep the intercept in the encoding.
+  # Compare this onehot encoding with the one from caret::dummyVars if I have time. 
+  
+  # Make train and test data for our model matrix adult.data.
+  train_and_test_data <- make.train.and.test(data = adult.data.onehot) # The function returns two matrices (x) and two vectors (y). 
+  # In addition, it returns the indices of the data set used in the training data. 
+  summary(train_and_test_data) # Returned list. 
+  x_train <- train_and_test_data[[1]]
+  y_train <- train_and_test_data[[2]]
+  x_test <- train_and_test_data[[3]]
+  y_test <- train_and_test_data[[4]]
+  # The train indices are used to construct H later. 
+  train_indices <- train_and_test_data[[5]]
+} else {
+  # Make train and test data for our adult.data.
+  train_and_test_data <- make.train.and.test(data = adult.data) 
+  summary(train_and_test_data) # Returned list. 
+  x_train <- train_and_test_data[[1]]
+  y_train <- train_and_test_data[[2]]
+  x_test <- train_and_test_data[[3]]
+  y_test <- train_and_test_data[[4]]
+  train_indices <- train_and_test_data[[5]]
 }
 
-
-# # For good performance with the ANN the data should be normalized! For the rest of the methods it does not really matter I think!
 if (CLI.args[1] == "ANN"){
-  adult.data.normalized <- normalize.data(data = adult.data, continuous_vars = cont) # returns list with data, mins and maxs.
-  #summary(adult.data.normalized)
-  adult.data <- adult.data.normalized[[1]] # We are only interested in the data for now.
-  # Make the design matrix for the DNN.
-  adult.data <- make.data.for.ANN() # Should probably make a copy like in the other branch! I can fix this when merging the branches!
-} 
-
-# Make train and test data.
-train_and_test_data <- make.train.and.test(data = adult.data) # The function returns two matrices (x) and two vectors (y). 
-# In addition, it returns two dataframes that are the original dataframe split into train and test (containing y's and x's).
-summary(train_and_test_data) # Returned list. 
-x_train <- train_and_test_data[[1]]
-y_train <- train_and_test_data[[2]]
-x_test <- train_and_test_data[[3]]
-y_test <- train_and_test_data[[4]]
-
-# The train indices are used to construct H later. 
-train_indices <- train_and_test_data[[5]]
-
-
-if (CLI.args[1] == "ANN"){
-  ANN <- fit.ANN(as.matrix(x_train), y_train, as.matrix(x_test), y_test)
+  ANN <- fit.ANN(data.matrix(x_train), y_train, data.matrix(x_test), y_test)
 } else if (CLI.args[1] == "logreg"){
   logreg <- fit.logreg(x_train, y_train, x_test, y_test)
 } else if (CLI.args[1] == "randomForest"){
@@ -93,24 +99,26 @@ if (CLI.args[1] == "ANN"){
 }
 
 # This is used to return the predicted probabilities according to the model we want to use (for later).
-prediction_model <- function(x_test, method){
+prediction_model <- function(x_test,method){
   # This returns the predicted probabilities of class 1 (>= 50k per year).
+  # We need to make sure that we feed the ANN with the proper design/model matrix for it to work!
   if (method == "logreg"){
     return(predict(logreg, data.frame(x_test), type = "response")) 
   } else if (method == "ANN"){
     return(as.numeric(ANN %>% predict(data.matrix(x_test))))
   } else if (method == "randomForest"){
     return(predict(random.forest, x_test)$predictions[,2]) 
-  } else {
+  } else { # This 'stop' is strictly not necessary since I checked this earlier in the compilation, but it is ok to leave here. 
     stop("Methods 'logreg', 'ANN' and 'randomForest' are the only implemented thus far")
   }
 }
 
-# This is not relevant anymore :)
-# Predictions from each of the two models (just for show).
+# This is not possible anymore, since I am not fitting all of them at once. 
+# Could easily be re-implemented though. The results are still very similar in the three prediction
+# models, which is not really a main point in this project.
+# Predictions from each of the models (just for show).
 # d <- data.frame("logreg" = prediction_model(x_test, method = "logreg"), 
 #                 "ANN" = prediction_model(data.matrix(x_test), method = "ANN"))
-# 
 # head(d, 20) # The predictions look relatively similar with the two methods. 
 # tail(d, 20) # There are a few differences, but not many. 
 
@@ -216,7 +224,7 @@ generate <- function(h, K){ # K = 10000 is used in the article for the experimen
 # we only generate one counterfactual per factual, for the first 100 undesirable observations we want to explain.
 if (CLI.args[1] %in% c("ANN", "logreg", "randomForest")){
   preds <- prediction_model(x_test, method = CLI.args[1]) 
-} else {
+} else { # Perhaps we need to add a special if else for ANN here! (because of the model matrix being different!)
   stop("Please supply either 'ANN', 'logreg' or 'randomForest' as the first CLI argument.")
 }
 
@@ -231,9 +239,10 @@ if (CLI.args[1] %in% c("ANN", "logreg", "randomForest")){
 #preds_sorted_values <- preds_sorted$x[1:10] # Skal egentlig ha de 100 første! Gjør dette for testing nå!
 #preds_sorted_indices <- preds_sorted$ix[1:10]
 #new_predicted_data <- cbind(test[preds_sorted_indices,colnames(adult.data)], "y_pred" = preds_sorted_values)
+#H <- H[1:(CLI.args[2]),-which(names(new_predicted_data) %in% c("y_pred","y"))] # This simply picks out the first 100, not randomly as below (and in the paper).
 # We select the 100 test observations with the lowest predicted probability? Perhaps this is not what they mean by 
 # "the first 100 observations with an undesirable prediction"? 
-# I have gone away from this for now!
+# I have gone away from the above first 100 sorted lowest predicted probabilities.
 # The code has been left here though, since I could probably discuss this in the report!
 
 new_predicted_data <- data.frame(cbind(adult.data[-train_indices, ], "y_pred" = preds)) 
@@ -283,7 +292,16 @@ post.processing <- function(D_h, H, data){ # 'data' is used to calculate normali
   
   
   fulfill_crit3_D_h <- function(D_h, c, pred.method){
-    D_h_crit3 <- D_h[prediction_model(D_h, method = pred.method) >= c,] # prediction_model(*) is the R function that predicts 
+    #D_h <- D_h_per_point[[1]]
+    #pred.method <- "ANN"
+    if (pred.method == "ANN"){
+      onehot_test_dat <- as.data.frame(model.matrix(~.,data = D_h)) # Det er her den failer (for D_h'er som ikke har nok verdier!!)
+      predictions <- prediction_model(onehot_test_dat, method = pred.method)
+    } else {
+      predictions <- prediction_model(D_h, method = pred.method)
+    }
+    #c <- 0.5
+    D_h_crit3 <- D_h[predictions >= c,] # prediction_model(*) is the R function that predicts 
     # according to the model we want to make explanations for. 
     # We can see that many rows are the same. The duplicates are removed below. 
     unique_D_h <- unique(D_h_crit3)
@@ -304,6 +322,8 @@ post.processing <- function(D_h, H, data){ # 'data' is used to calculate normali
   
   add_metrics_D_h_all_points <- function(D_h_pp, H_l, norm.factors){
     # Calculates sparsity and Gower for all counterfactuals and adds the columns to each respective D_h.
+    #D_h_pp <- D_h_per_point
+    #H_l <- H
     for (i in 1:length(D_h_pp)){
       D_h_pp[[i]] <- gower_D_h(H_l[i,], D_h_pp[[i]], norm.factors)
       D_h_pp[[i]] <- sparsity_D_h(H_l[i,], D_h_pp[[i]])
@@ -312,7 +332,7 @@ post.processing <- function(D_h, H, data){ # 'data' is used to calculate normali
   }
   
   # Remove non-valid counterfactuals (those that don't change the prediction).
-  crit3_D_h_per_point <- fulfill_crit3(D_h_pp = D_h, c = 0.5, pred.method = CLI.args[1]) # Fulfill criterion 3 for all (unique) generated possible counterfactuals. 
+  crit3_D_h_per_point <- fulfill_crit3(D_h_pp = list_of_values, c = 0.5, pred.method = CLI.args[1]) # Fulfill criterion 3 for all (unique) generated possible counterfactuals. 
   
   # Add sparsity and Gower distance to each row. 
   crit4_D_h_all_points <- add_metrics_D_h_all_points(crit3_D_h_per_point,H, norm.factors)
@@ -321,7 +341,18 @@ post.processing <- function(D_h, H, data){ # 'data' is used to calculate normali
 
 D_h_post_processed <- post.processing(D_h_per_point, H, adult.data[,-14])
 
-############# Do we want several counterfactuals per factual or only one? Below we select one!
+# Sjekker at alt fungerer som det skal!
+crit3_D_h_per_point <- fulfill_crit3(D_h_per_point, 0.5, CLI.args[1])
+d <- D_h_per_point[[3]]
+d$relationship <- factor(d$relationship, levels = c(levels(d$relationship), "Husband"))
+onehot_test_dat <- as.data.frame(model.matrix(~.,data = d, contrasts.arg = list(
+  relationship = contrasts(adult.data$relationship, contrasts = FALSE)
+)))
+# Ser at jeg må legge til ekstra levels for hver faktor der det mangler en level! (for at det skal være mulig å lage en model.matrix!)
+# Finnes det noen annen måte jeg kan gjøre dette på!?!?? Høre med Kjersti!!!
+
+
+############ Do we want several counterfactuals per factual or only one? Below we select one!
 generate_one_counterfactual_D_h <- function(D_h){
   # Generate one counterfactual for one factual, i.e. reduce the corresponding D_h to 1 row.
   if (nrow(D_h) >= 1){

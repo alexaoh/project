@@ -75,6 +75,17 @@ plot_tree <- function(index){
   }
 }
 
+make.data.for.ANN <- function(data, cont){
+  # Make design matrix via one-hot encoding of the categorical variables. 
+  train_text <- data[,-which(names(data) %in% cont)]
+  train_text <- train_text[,-ncol(train_text)] # Remove the label!
+  train_numbers <- data[,which(names(data) %in% cont)]
+  encoded <- caret::dummyVars(" ~ .", data = train_text, fullRank = F)
+  train_encoded <- data.frame(predict(encoded, newdata = train_text))
+  
+  return(cbind(train_numbers, train_encoded, data["y"]))
+}
+
 ######################## Fit prediction models.
 fit.ANN <- function(x_train, y_train, x_test, y_test){
   # Fit the ANN and return the keras object for the ANN.
@@ -135,6 +146,8 @@ fit.logreg <- function(x_train, y_train, x_test, y_test){
 }
 
 fit.random.forest <- function(x_train, y_train, x_test, y_test){
+  # Fit the random forest and return the random forest object.
+  # I assume that the call below uses the Gini index, could check this in the docs. 
   model <- ranger(as.factor(y_train) ~ ., data = x_train, num.trees = 500, num.threads = 6,
                   verbose = TRUE,
                   probability = TRUE,
