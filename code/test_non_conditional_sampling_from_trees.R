@@ -124,6 +124,9 @@ if (args[1] == "bin"){
 
 # Next we compare this generated set of data from the trees to the real data!
 
+#load("unconditional_generated_trees_bin.RData", verbose = T)
+load("unconditional_generated_trees_cat.RData", verbose = T)
+
 table(D2$sex)/sum(table(D2$sex))
 table(adult.data$sex)/sum(table(adult.data$sex))
 
@@ -154,12 +157,12 @@ cap_gain_OG <- (adult.data %>% select(capital_gain))[[1]]
 cap_gain_gen <- (D2 %>% select(capital_gain))[[1]]
 summary(cap_gain_OG)
 summary(cap_gain_gen)
-length(cap_gain_OG[cap_gain_OG != 0])
-length(cap_gain_gen[cap_gain_gen != 0])
+length(cap_gain_OG[cap_gain_OG != 0])/length(cap_gain_OG)
+length(cap_gain_gen[cap_gain_gen != 0])/length(cap_gain_gen)
 
 cap_loss_OG <- (adult.data %>% select(capital_loss))[[1]]
 cap_loss_gen <- (D2 %>% select(capital_loss))[[1]]
 summary(cap_loss_OG)
 summary(cap_loss_gen)
-length(cap_loss_OG[cap_loss_OG != 0])
-length(cap_loss_gen[cap_loss_gen != 0])
+length(cap_loss_OG[cap_loss_OG != 0])/length(cap_loss_OG)
+length(cap_loss_gen[cap_loss_gen != 0])/length(cap_loss_gen)
