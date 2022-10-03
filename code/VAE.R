@@ -3,8 +3,8 @@
 
 rm(list = ls())  # make sure to remove previously loaded variables into the Session.
 
-if (tensorflow::tf$executing_eagerly())
-  tensorflow::tf$compat$v1$disable_eager_execution()
+#if (tensorflow::tf$executing_eagerly())
+#  tensorflow::tf$compat$v1$disable_eager_execution()
 
 setwd("/home/ajo/gitRepos/project")
 library(keras)
@@ -34,17 +34,33 @@ train_indices <- train_and_test_data[[4]]
 
 # Following this guide: https://www.datatechnotes.com/2020/06/how-to-build-variational-autoencoders-in-R.html
 
-latent_size <- 10 # Not sure how to select this parameter yet. This sets the size of the latent representation (vector), 
+latent_dim <- 10 # Not sure how to select this parameter yet. This sets the size of the latent representation (vector), 
+intermediate_dim <- 18
 # defined by the parameters z_mean and z_log_var. 
 input_size <- ncol(x_train) 
 
 ####### First we define the encoder. 
 enc_input <- layer_input(shape = c(input_size))
-layer_one <- layer_dense(enc_input, units=18, activation = "relu")
-z_mean <- layer_dense(layer_one, latent_size)
-z_log_var <- layer_dense(layer_one, latent_size)
+layer_one <- layer_dense(enc_input, units=intermediate_dim, activation = "relu")
+z_mean <- layer_dense(layer_one, latent_dim)
+z_log_var <- layer_dense(layer_one, latent_dim)
 
-encoder <- keras_model(enc_input, z_mean)
+# Sampling function in the latent space. It samples the Gaussian distribution by using the mean and variance
+# that will be learned. It returns a sampled latent vector. 
+sampling <- function(args){
+  # Here we clearly assume a Gaussian distribution via the method of sampling from the assumed latent distribution as shown below. 
+  c(z_mean, z_log_var) %<-% args
+  epsilon <- k_random_normal(shape = list(k_shape(z_mean)[1], latent_size),
+                             mean = 0, stddev = 1) # Draws samples from standard normal, adds element-wise to a vector. 
+  z_mean + k_exp(z_log_var/2) * epsilon # element-wise exponential, in order to transform the standard normal samples to 
+  # sampling from our latent variable distribution (the reparametrization trick).
+}
+
+# Point randomly sampled from the variational / approximated posterior.   
+z <- list(z_mean, z_log_var) %>% 
+  layer_lambda(sampling)
+
+encoder <- keras_model(enc_input, c(z_mean, z_log_var, z))
 summary(encoder)
 
 # # Sampling function in the latent space. It samples the Gaussian distribution by using the mean and variance
@@ -63,113 +79,109 @@ summary(encoder)
 #   layer_lambda(sampling)
 
 
-# Sampling function in the latent space. It samples the Gaussian distribution by using the mean and variance
-# that will be learned. It returns a sampled latent vector. 
-sampling <- function(args){
-  # Here we clearly assume a Gaussian distribution via the method of sampling from the assumed latent distribution as shown below. 
-  c(z_mean, z_log_var) %<-% args
-  epsilon <- k_random_normal(shape = list(k_shape(z_mean)[1], latent_size),
-                             mean = 0, stddev = 1) # Draws samples from standard normal, adds element-wise to a vector. 
-  z_mean + k_exp(z_log_var/2) * epsilon # element-wise exponential, in order to transform the standard normal samples to 
-  # sampling from our latent variable distribution (the reparametrization trick).
-}
-
-# Point randomly sampled from the variational / approximated posterior.   
-z <- list(z_mean, z_log_var) %>% 
-  layer_lambda(sampling)
-
 ####### Defining the decoder. Det gir ikke mening for meg her nede! Tror det er noe rart med dimensjonen på dataen i hele modellen fra begynnelsen av!
 #decoder_input <- layer_input(k_int_shape(z)[-1])
 #decoder_layer <- layer_dense(decoder_input, units = 256, activation = "relu") # I have changed the code from the guide a bit here, since it did not make sense to me. 
 
-decoder_layer <- layer_dense(units = 18, activation = "relu")
+latent_inputs <- layer_input(shape = c(latent_dim))
+decoder_layer <- layer_dense(latent_inputs, units = intermediate_dim, activation = "relu")
+outputs <- layer_dense(decoder_layer, input_size, activation = "sigmoid")
 #decoder_mean <- layer_dense(units = input_size, activation = "sigmoid")
-z_decoded <- decoder_layer(z)
+#z_decoded <- decoder_layer(z)
 #z_decoded_mean <- decoder_mean(z_decoded)
+
+decoder <- keras_model(latent_inputs, outputs)
+summary(decoder)
+
+outputs <- decoder(encoder(enc_input)[[3]])
+vae <- keras_model(enc_input, outputs)
+summary(vae)
 
 # vae <- keras_model(enc_input, z_decoded_mean)
 # summary(vae)
 # 
-# vae_loss <- function(input, z_decoded_mean){
-#   xent_loss=(input_size/1.0)*loss_binary_crossentropy(input, z_decoded_mean)
-#   kl_loss=-0.5*k_mean(1+z_log_var-k_square(z_mean)-k_exp(z_log_var), axis=-1)
-#   xent_loss + kl_loss
-# }
-# 
-# vae %>% compile(optimizer = "rmsprop", loss = vae_loss)
-# summary(vae)
-# 
-# 
-# ### Generator — not sure how this fits in to my model yet. 
-# dec_input <- layer_input(shape = latent_size)
-# h_decoded_2 <- decoder_layer(dec_input)
-# x_decoded_mean_2 <- decoder_mean(h_decoded_2)
-# generator <- keras_model(dec_input, x_decoded_mean_2)
-# summary(generator)
-# 
-# # Training/fitting the model.
-# vae %>% fit(
-#   x = data.matrix(x_train), 
-#   #y = NULL,
-#   y = data.matrix(x_train), 
-#   shuffle = TRUE, 
-#   epochs = 20, 
-#   batch_size = 64, 
-#   validation_data = list(data.matrix(x_test), data.matrix(x_test))
-# )
+vae_loss <- function(input, z_decoded_mean){
+  xent_loss=(input_size/1.0)*loss_binary_crossentropy(input, z_decoded_mean)
+  kl_loss=-0.5*k_mean(1+z_log_var-k_square(z_mean)-k_exp(z_log_var), axis=-1)
+  xent_loss + kl_loss
+}
 
-library(R6)
-
-CustomVariationalLayer <- R6Class("CustomVariationalLayer",
-                                  
-                                  inherit = KerasLayer,
-                                  
-                                  public = list(
-                                    
-                                    vae_loss = function(x, z_decoded) {
-                                      x <- k_flatten(x)
-                                      z_decoded <- k_flatten(z_decoded)
-                                      xent_loss <- metric_binary_crossentropy(x, z_decoded)
-                                      kl_loss <- -0.5 * k_mean(
-                                        1 + z_log_var - k_square(z_mean) - k_exp(z_log_var), 
-                                        axis = -1L
-                                      )
-                                      k_mean(xent_loss + 1e-3 * kl_loss)
-                                    },
-                                    
-                                    call = function(inputs, mask = NULL) {
-                                      x <- inputs[[1]]
-                                      z_decoded <- inputs[[2]]
-                                      loss <- self$vae_loss(x, z_decoded)
-                                      self$add_loss(loss, inputs = inputs)
-                                      x
-                                    }
-                                  )
-)
-
-layer_variational <- function(object) { 
-  create_layer(CustomVariationalLayer, object, list())
-} 
-
-# Call the custom layer on the input and the decoded output to obtain
-# the final model output
-y <- list(enc_input, z_decoded) %>% 
-  layer_variational() 
-
-vae <- keras_model(enc_input, y)
+vae %>% compile(optimizer = "rmsprop", loss = vae_loss)
 summary(vae)
 
-vae %>% compile(
-  optimizer = "rmsprop",
-  loss = NULL
+
+### Generator — not sure how this fits in to my model yet.
+dec_input <- layer_input(shape = latent_size)
+h_decoded_2 <- decoder_layer(dec_input)
+x_decoded_mean_2 <- decoder_mean(h_decoded_2)
+generator <- keras_model(dec_input, x_decoded_mean_2)
+summary(generator)
+
+# Training/fitting the model.
+vae %>% fit(
+  data.matrix(x_train),
+  #y = NULL,
+  y = data.matrix(x_train),
+  shuffle = TRUE,
+  epochs = 20,
+  batch_size = 64,
+  validation_data = list(data.matrix(x_test), data.matrix(x_test))
 )
 
-vae %>% fit(
-  x = data.matrix(x_train), y = NULL,
-  epochs = 10,
-  batch_size = 64,
-  validation_data = list(data.matrix(x_test), NULL)
-) # Assert input compatibility!! 
+
+# 
+# library(R6)
+# 
+# CustomVariationalLayer <- R6Class("CustomVariationalLayer",
+#                                   
+#                                   inherit = KerasLayer,
+#                                   
+#                                   public = list(
+#                                     
+#                                     vae_loss = function(x, z_decoded) {
+#                                       x <- k_flatten(x)
+#                                       z_decoded <- k_flatten(z_decoded)
+#                                       xent_loss <- metric_binary_crossentropy(x, z_decoded)
+#                                       kl_loss <- -0.5 * k_mean(
+#                                         1 + z_log_var - k_square(z_mean) - k_exp(z_log_var), 
+#                                         axis = -1L
+#                                       )
+#                                       k_mean(xent_loss + 1e-3 * kl_loss)
+#                                     },
+#                                     
+#                                     call = function(inputs, mask = NULL) {
+#                                       x <- inputs[[1]]
+#                                       z_decoded <- inputs[[2]]
+#                                       loss <- self$vae_loss(x, z_decoded)
+#                                       self$add_loss(loss, inputs = inputs)
+#                                       x
+#                                     }
+#                                   )
+# )
+# 
+# layer_variational <- function(object) { 
+#   create_layer(CustomVariationalLayer, object, list())
+# } 
+# 
+# # Call the custom layer on the input and the decoded output to obtain
+# # the final model output
+# y <- list(enc_input, z_decoded) %>% 
+#   layer_variational() 
+# 
+# vae <- keras_model(enc_input, y)
+# summary(vae)
+# 
+# vae %>% compile(
+#   optimizer = "rmsprop",
+#   loss = NULL
+# )
+# 
+# vae %>% fit(
+#   x = data.matrix(x_train), y = NULL,
+#   epochs = 10,
+#   batch_size = 64,
+#   validation_data = list(data.matrix(x_test), NULL)
+# ) # Assert input compatibility!! 
 
 # Guiden sier at vi kan bruke denne (nedenfor) for å sette en stopper for en error. Aner ikke hva som er greia med det!?
 # Veldig merkelig! Fungerer ikke på den måten uansett!
@@ -180,7 +192,7 @@ n = 10
 test =  x_test[0:n,]
 x_test_encoded <- predict(encoder, data.matrix(test))
 
-decoded_data = generator %>% predict(x_test_encoded) # Hvorfor bruke "generator" her og ikke "decoderen" fra over?
+decoded_data = decoder %>% predict(x_test_encoded) # Hvorfor bruke "generator" her og ikke "decoderen" fra over?
 
 # Ikke spesielt like foreløpig!
 head(test[,cont])
@@ -190,3 +202,32 @@ head(decoded_data[,cont])
 
 head(test[,1:6])
 head(decoded_data[,1:6])
+
+# I want to try to generate new data points from the decoder.
+#s <- rnorm(1000) # Generate some random data. 
+#library(dae)
+#s <- rmvnorm(rep(0, latent_dim), V = diag(10))
+s <- matrix(rnorm(100000*10, mean = 0, sd = 12), ncol = 10)
+decoded_data_rand <- decoder %>% predict(s)
+head(decoded_data_rand)
+decoded_data_rand <- as.data.frame(decoded_data_rand)
+colnames(decoded_data_rand) <- colnames(x_train)
+head(decoded_data_rand)
+
+summary(decoded_data_rand$age)
+summary(adult.data$age)
+
+summary(decoded_data_rand$fnlwgt)
+boxplot(decoded_data_rand$fnlwgt)
+summary(adult.data$fnlwgt)
+boxplot(adult.data$fnlwgt)
+
+summary(decoded_data_rand[,cont])
+summary(adult.data[,cont])
+
+cap_loss_real <- (adult.data %>% select(capital_loss))[[1]]
+cap_loss_gen <- (decoded_data_rand %>% select(capital_loss))[[1]]
+length(cap_loss_real[cap_loss_real != 0]) # Same as for cap_gain!
+length(cap_loss_real)
+length(cap_loss_gen[cap_loss_gen != 0]) # Same as for cap_gain!
+length(cap_loss_gen) # Almost all data points are != 0 from VAE!
