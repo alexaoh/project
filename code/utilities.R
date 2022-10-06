@@ -77,13 +77,39 @@ plot_tree <- function(index){
 
 make.data.for.ANN <- function(data, cont){
   # Make design matrix via one-hot encoding of the categorical variables. 
-  train_text <- data[,-which(names(data) %in% cont)]
-  train_text <- train_text[,-ncol(train_text)] # Remove the label!
-  train_numbers <- data[,which(names(data) %in% cont)]
-  encoded <- caret::dummyVars(" ~ .", data = train_text, fullRank = F)
-  train_encoded <- data.frame(predict(encoded, newdata = train_text))
+  text <- data[,-which(names(data) %in% cont)]
+  text <- text[,-ncol(text)] # Remove the label!
+  numbers <- data[,which(names(data) %in% cont)]
+  encoded <- caret::dummyVars(" ~ .", data = text, fullRank = F)
+  data_encoded <- data.frame(predict(encoded, newdata = text))
   
-  return(cbind(train_numbers, train_encoded, data["y"]))
+  return(cbind(numbers, data_encoded, data["y"]))
+}
+
+reverse.onehot.encoding <- function(data, cont, cat, has.label){
+  # Reverse one-hot encoded design matrices. The function uses the design matrix (data) and two lists of names (continuous and categorical).
+  text <- data[,-which(names(data) %in% cont)]
+  if (has.label){
+    text <- text[,-ncol(text)] # Remove the label!  
+  }
+  numbers <- data[,which(names(data) %in% cont)]
+  new_text <- c()
+  for (name in cat){
+    d <- data %>% dplyr::select(starts_with(name))
+    #print(names(d))
+    categorical_value <- names(d)[max.col(d)]
+    #print(head(categorical_value))
+    new_text <- cbind(new_text, categorical_value)
+  }
+  new_text <- as.data.frame(new_text)
+  colnames(new_text) <- cat
+  
+  if (has.label){
+    r <- cbind(numbers, new_text, data["y"])
+  } else {
+    r <- cbind(numbers, new_text)
+  }
+  return(r)
 }
 
 ######################## Fit prediction models.

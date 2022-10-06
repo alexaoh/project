@@ -16,6 +16,9 @@ load("data/adult_data_binarized.RData", verbose = T)
 
 # List of continuous variables.
 cont <- c("age","fnlwgt","education_num","capital_gain","capital_loss","hours_per_week")
+# List of categorical variables (used to reverse onehot encode later!)
+cat <- setdiff(names(adult.data), cont)
+cat <- cat[-length(cat)] # Remove the label "y"!
 
 adult.data.normalized <- normalize.data(data = adult.data, continuous_vars = cont) # returns list with data, mins and maxs.
 summary(adult.data.normalized)
@@ -50,7 +53,7 @@ z_log_var <- layer_dense(layer_one, latent_dim)
 sampling <- function(args){
   # Here we clearly assume a Gaussian distribution via the method of sampling from the assumed latent distribution as shown below. 
   c(z_mean, z_log_var) %<-% args
-  epsilon <- k_random_normal(shape = list(k_shape(z_mean)[1], latent_size),
+  epsilon <- k_random_normal(shape = list(k_shape(z_mean)[1], latent_dim),
                              mean = 0, stddev = 1) # Draws samples from standard normal, adds element-wise to a vector. 
   z_mean + k_exp(z_log_var/2) * epsilon # element-wise exponential, in order to transform the standard normal samples to 
   # sampling from our latent variable distribution (the reparametrization trick).
@@ -111,11 +114,11 @@ summary(vae)
 
 
 ### Generator — not sure how this fits in to my model yet.
-dec_input <- layer_input(shape = latent_size)
-h_decoded_2 <- decoder_layer(dec_input)
-x_decoded_mean_2 <- decoder_mean(h_decoded_2)
-generator <- keras_model(dec_input, x_decoded_mean_2)
-summary(generator)
+# dec_input <- layer_input(shape = latent_dim)
+# h_decoded_2 <- decoder_layer(dec_input)
+# x_decoded_mean_2 <- decoder_mean(h_decoded_2)
+# generator <- keras_model(dec_input, x_decoded_mean_2)
+# summary(generator)
 
 # Training/fitting the model.
 vae %>% fit(
@@ -187,7 +190,7 @@ vae %>% fit(
 # Veldig merkelig! Fungerer ikke på den måten uansett!
 #tensorflow::tf$compat$v1$disable_eager_execution()
 
-# Tester å genere noe data nedenfor:
+# Tester å generere noe data nedenfor:
 n = 10
 test =  x_test[0:n,]
 x_test_encoded <- predict(encoder, data.matrix(test))
@@ -207,12 +210,17 @@ head(decoded_data[,1:6])
 #s <- rnorm(1000) # Generate some random data. 
 #library(dae)
 #s <- rmvnorm(rep(0, latent_dim), V = diag(10))
-s <- matrix(rnorm(100000*10, mean = 0, sd = 12), ncol = 10)
+s <- matrix(rnorm(100000*latent_dim, mean = 0, sd = 12), ncol = latent_dim)
 decoded_data_rand <- decoder %>% predict(s)
 head(decoded_data_rand)
 decoded_data_rand <- as.data.frame(decoded_data_rand)
 colnames(decoded_data_rand) <- colnames(x_train)
 head(decoded_data_rand)
+
+# Reverse one hot encoding might be a good idea!
+
+adult.data.reverse.onehot <- reverse.onehot.encoding(adult.data, cont, cat, has.label = T)
+decoded_data_rand <- reverse.onehot.encoding(decoded_data_rand, cont, cat, has.label = F)
 
 summary(decoded_data_rand$age)
 summary(adult.data$age)
@@ -225,9 +233,30 @@ boxplot(adult.data$fnlwgt)
 summary(decoded_data_rand[,cont])
 summary(adult.data[,cont])
 
-cap_loss_real <- (adult.data %>% select(capital_loss))[[1]]
-cap_loss_gen <- (decoded_data_rand %>% select(capital_loss))[[1]]
+cap_loss_real <- (adult.data %>% dplyr::select(capital_loss))[[1]]
+cap_loss_gen <- (decoded_data_rand %>% dplyr::select(capital_loss))[[1]]
 length(cap_loss_real[cap_loss_real != 0]) # Same as for cap_gain!
 length(cap_loss_real)
 length(cap_loss_gen[cap_loss_gen != 0]) # Same as for cap_gain!
 length(cap_loss_gen) # Almost all data points are != 0 from VAE!
+
+table(adult.data.reverse.onehot$workclass)/sum(table(adult.data.reverse.onehot$workclass))
+table(decoded_data_rand$workclass)/sum(table(decoded_data_rand$workclass))
+
+table(adult.data.reverse.onehot$marital_status)/sum(table(adult.data.reverse.onehot$marital_status))
+table(decoded_data_rand$marital_status)/sum(table(decoded_data_rand$marital_status))
+
+table(adult.data.reverse.onehot$occupation)/sum(table(adult.data.reverse.onehot$occupation))
+table(decoded_data_rand$occupation)/sum(table(decoded_data_rand$occupation))
+
+table(adult.data.reverse.onehot$relationship)/sum(table(adult.data.reverse.onehot$relationship))
+table(decoded_data_rand$relationship)/sum(table(decoded_data_rand$relationship))
+
+table(adult.data.reverse.onehot$race)/sum(table(adult.data.reverse.onehot$race))
+table(decoded_data_rand$race)/sum(table(decoded_data_rand$race))
+
+table(adult.data.reverse.onehot$sex)/sum(table(adult.data.reverse.onehot$sex))
+table(decoded_data_rand$sex)/sum(table(decoded_data_rand$sex))
+
+table(adult.data.reverse.onehot$native_country)/sum(table(adult.data.reverse.onehot$native_country))
+table(decoded_data_rand$native_country)/sum(table(decoded_data_rand$native_country))
