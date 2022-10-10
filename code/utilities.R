@@ -96,9 +96,7 @@ reverse.onehot.encoding <- function(data, cont, cat, has.label){
   new_text <- c()
   for (name in cat){
     d <- data %>% dplyr::select(starts_with(name))
-    #print(names(d))
     categorical_value <- names(d)[max.col(d)]
-    #print(head(categorical_value))
     new_text <- cbind(new_text, categorical_value)
   }
   new_text <- as.data.frame(new_text)

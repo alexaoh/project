@@ -3,7 +3,7 @@
 
 rm(list = ls())  # make sure to remove previously loaded variables into the Session.
 
-#if (tensorflow::tf$executing_eagerly())
+# if (tensorflow::tf$executing_eagerly())
 #  tensorflow::tf$compat$v1$disable_eager_execution()
 
 setwd("/home/ajo/gitRepos/project")
@@ -13,6 +13,7 @@ source("code/utilities.R")
 
 # We load the original (non-binarized data).
 load("data/adult_data_binarized.RData", verbose = T)
+#load("data/adult_data_categ.RData", verbose = T)
 
 # List of continuous variables.
 cont <- c("age","fnlwgt","education_num","capital_gain","capital_loss","hours_per_week")
@@ -104,7 +105,9 @@ summary(vae)
 # summary(vae)
 # 
 vae_loss <- function(input, z_decoded_mean){
-  xent_loss=(input_size/1.0)*loss_binary_crossentropy(input, z_decoded_mean)
+  #xent_loss=(input_size/1.0)*loss_binary_crossentropy(input, z_decoded_mean) # Prøver med mean squared error eller kullback leibler. 
+  xent_loss=(input_size/1.0)*loss_mean_squared_error(input, z_decoded_mean) 
+  #xent_loss=(input_size/1.0)*loss_kullback_leibler_divergence(input, z_decoded_mean) 
   kl_loss=-0.5*k_mean(1+z_log_var-k_square(z_mean)-k_exp(z_log_var), axis=-1)
   xent_loss + kl_loss
 }
