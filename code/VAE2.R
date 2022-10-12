@@ -21,7 +21,7 @@ cont <- c("age","fnlwgt","education_num","capital_gain","capital_loss","hours_pe
 cat <- setdiff(names(adult.data), cont)
 cat <- cat[-length(cat)] # Remove the label "y"!
 
-adult.data.normalized <- normalize.data(data = adult.data, continuous_vars = cont) # returns list with data, mins and maxs.
+adult.data.normalized <- normalize.data(data = adult.data, continuous_vars = cont, T) # returns list with data + mins and maxs (or means and sds).
 summary(adult.data.normalized)
 adult.data <- adult.data.normalized[[1]] # we are only interested in the data for now. 
 
@@ -38,7 +38,7 @@ train_indices <- train_and_test_data[[4]]
 
 # Following this guide: https://www.datatechnotes.com/2020/06/how-to-build-variational-autoencoders-in-R.html
 
-latent_dim <- 5 # This sets the size of the latent representation (vector), 
+latent_dim <- 2 # This sets the size of the latent representation (vector), 
 intermediate_dim <- 18
 # defined by the parameters z_mean and z_log_var. 
 input_size <- ncol(x_train) 
@@ -67,94 +67,72 @@ z <- list(enc_mean, enc_log_var) %>%
 encoder <- keras_model(enc_input, c(z), name = "encoder_model") # c(z_mean, z_log_var, z) 
 summary(encoder)
 
-
 latent_inputs <- layer_input(shape = c(latent_dim), name = "dec_input")
 decoder_layer <- layer_dense(latent_inputs, units = intermediate_dim, activation = "relu", name = "dec_hidden")
-outputs <- layer_dense(decoder_layer, input_size, activation = "sigmoid", name = "dec_output") 
-# Use the sigmoid activation to restrict data to (0,1) since we are dealing with normalized input data. 
-# Would it be possible to test linear activation function here and normalize the decoded data later instead?
-# outputs <- layer_dense(decoder_layer, input_size) # We test this here.  
-
+outputs <- layer_dense(decoder_layer, input_size,  name = "dec_output") # activation = "sigmoid",
 
 decoder <- keras_model(latent_inputs, outputs, name = "decoder_model")
 summary(decoder)
 
-vae_input <- layer_input(shape = c(input_size), name = "vae_input")
-vae_encoder_output <- encoder(vae_input)
-vae_decoder_output <- decoder(vae_encoder_output)
-vae <- keras_model(vae_input, vae_decoder_output, name = "VAE")
-summary(vae)
-
-# vae <- keras_model(enc_input, z_decoded_mean)
-# summary(vae)
-# 
-
-vae_loss <- function(enc_mean, enc_log_var){
-  # Loss function for our VAE (with Gaussian assumptions).
-  vae_reconstruction_loss <- function(y_true, y_predict){
-    loss_factor <- 10 # Give weight to the reconstruction in the loss function ("hyperparameter")
-    #reconstruction_loss <- metric_mean_squared_error(y_true, y_predict) # Or binary cross entropy?
-    #reconstruction_loss <- loss_binary_crossentropy(y_true, y_predict)
-    reconstruction_loss <- k_mean(k_square(y_true - y_predict))
-    return(reconstruction_loss*loss_factor)
-  }
-  
-  vae_kl_loss <- function(encoder_mu, encoder_log_variance){
-    kl <- -1/2*k_mean(1 + encoder_log_variance - k_square(encoder_mu) - k_exp(encoder_log_variance)) # Or axis = -1?
-    return(kl)
-  }
-  
-  vae_kl_loss_metric <- function(y_true, y_pred){
-    kl <- -1/2*k_mean(1 + encoder_log_variance - k_square(encoder_mu) - k_exp(encoder_log_variance), axis = -1) # Or axis = -1?
-    return(kl)
-  }
-  
-  v_loss <- function(y_true, y_pred){
-    reconstruction <- vae_reconstruction_loss(y_true, y_pred)
-    kl <- vae_kl_loss(enc_mean, enc_log_var) 
-    return(reconstruction + kl)
-  }
-  return(v_loss)
-}
 
 
-vae_loss <- function(y_true, y_pred){
-  xent_loss=(input_size/1.0)*loss_binary_crossentropy(y_true, y_pred) # Prøver med mean squared error eller kullback leibler.
-  #xent_loss=(input_size/1.0)*loss_mean_squared_error(input, z_decoded_mean)
-  #xent_loss=(input_size/1.0)*loss_kullback_leibler_divergence(input, z_decoded_mean)
-  kl_loss=-0.5*k_mean(1+enc_log_var-k_square(enc_mean)-k_exp(enc_log_var), axis=-1)
-  return(xent_loss + kl_loss)
-}
+# Instead of using a custom loss function, we make a custom layer, where the loss function is added!
+library(R6)
 
-#vae %>% compile(optimizer = "rmsprop", loss = vae_loss(enc_mean, enc_log_var))#custom_metric("vae_loss", vae_loss(enc_mean, enc_log_var)))
-#vae %>% compile(optimizer = "rmsprop", loss = vae_loss(enc_mean, enc_log_var))
-vae %>% compile(optimizer = "rmsprop", loss = vae_loss)
-#custom_metric("vae_loss_metrici", function(y_true, y_pred){v_loss(y_true, y_pred)})
-summary(vae)
+CustomVariationalLayer <- R6Class("CustomVariationalLayer",
 
+                                  inherit = KerasLayer,
 
-### Generator — not sure how this fits in to my model yet.
-# dec_input <- layer_input(shape = latent_dim)
-# h_decoded_2 <- decoder_layer(dec_input)
-# x_decoded_mean_2 <- decoder_mean(h_decoded_2)
-# generator <- keras_model(dec_input, x_decoded_mean_2)
-# summary(generator)
+                                  public = list(
 
-# Training/fitting the model.
-vae %>% fit(
-  x = data.matrix(x_train),
-  #y = NULL,
-  y = data.matrix(x_train),
-  shuffle = T,
-  epochs = 20,
-  batch_size = 64,
-  validation_data = list(data.matrix(x_test), data.matrix(x_test)),
-  verbose = 1
+                                    vae_loss = function(x_true, x_pred) {
+                                      #xent_loss <- metric_binary_crossentropy(x_true, x_pred)
+                                      xent_loss <- metric_mean_squared_error(x_true, x_pred)
+                                      #xent_loss <- k_mean(k_square(x_true - x_pred))
+                                      kl_loss <- -0.5 * k_mean(
+                                        1 + enc_log_var - k_square(enc_mean) - k_exp(enc_log_var),
+                                        axis = -1L
+                                      )
+                                      k_mean(100*xent_loss + kl_loss)
+                                    },
+
+                                    call = function(inputs, mask = NULL) {
+                                      x <- inputs[[1]]
+                                      x_pred <- inputs[[2]]
+                                      loss <- self$vae_loss(x, x_pred)
+                                      self$add_loss(loss, inputs = inputs)
+                                      x
+                                    }
+                                  )
 )
 
+layer_variational <- function(object) {
+  create_layer(CustomVariationalLayer, object, list())
+}
+
+x_pred <- decoder(z)
+# Call the custom layer on the input and the decoded output to obtain
+# the final model output
+y <- list(enc_input, x_pred) %>%
+  layer_variational()
+
+vae <- keras_model(enc_input, y)
+summary(vae)
+
+vae %>% compile(
+  optimizer = optimizer_adam(),
+  loss = NULL
+)
+
+vae %>% fit(
+  x = data.matrix(x_train), y = NULL,
+  epochs = 20,
+  batch_size = 64,
+  validation_data = list(data.matrix(x_test), NULL)
+) 
 
 # Tester å generere noe data nedenfor:
-n = 10
+n = 3
 test =  x_test[0:n,]
 x_test_encoded <- predict(encoder, data.matrix(test))
 
@@ -227,4 +205,19 @@ table(decoded_data_rand$sex)/sum(table(decoded_data_rand$sex))
 
 table(adult.data.reverse.onehot$native_country)/sum(table(adult.data.reverse.onehot$native_country))
 table(decoded_data_rand$native_country)/sum(table(decoded_data_rand$native_country))
+
+
+########################### We try to feed the autoencoder entirely with test data in order to generate new points!
+reconstructed_data <- vae %>% predict(data.matrix(x_test)) # Den bare kopierer test-dataen når jeg gjør dette!?
+# Da er det vel noe rart med implementasjonen?
+reconstructed_data <- as.data.frame(reconstructed_data)
+colnames(reconstructed_data) <- colnames(x_test)
+
+adult.data.reverse.onehot <- reverse.onehot.encoding(adult.data, cont, cat, has.label = T)
+decoded_data_rand <- reverse.onehot.encoding(reconstructed_data, cont, cat, has.label = F)
+x_test.reverse.onehot <- reverse.onehot.encoding(x_test, cont, cat, has.label = F)
+
+summary(x_test.reverse.onehot)
+summary(decoded_data_rand)
+
 

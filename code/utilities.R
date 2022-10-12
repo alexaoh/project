@@ -13,27 +13,34 @@ take.arguments <- function(){
 
 
 ########################## Data processing tools. 
-normalize <- function(x){
-  # Normalize the vector x. 
-  return((x- min(x))/(max(x)-min(x)))
+normalize <- function(x, standardscaler){
+  # Normalize the vector x. This is not normalization but min-max scaling. 
+  return((x- min(x))/(max(x)-min(x)))  
 }
 
 de.normalize <- function(x, M, m){
-  # De-normalize the vector x. 
+  # De-normalize the vector x. De-min-max transform the data. 
   return(x*(M-m)+m)
 }
 
-normalize.data <- function(data, continuous_vars){
+normalize.data <- function(data, continuous_vars, standardscaler){
   # Normalizes our data and returns the mins and maxs of all continuous variables, such that we can de-normalize later. 
-  mins <- c()
-  maxs <- c()
-  
-  for (j in continuous_vars){
-    mins <- c(mins, min(data[,j]))
-    maxs <- c(maxs, max(data[,j]))
-    data[,j] <- normalize(data[,j])
+  if (standardscaler){
+    d <- scale(data[,cont])
+    cat <- setdiff(names(adult.data), cont)
+    full_data <- cbind(d, data[,cat])[,colnames(data)]
+    return(list("d" = full_data, "means" = attr(d, "scaled:center"), "sds" = attr(d, "scaled:scale")))
+  } else {
+    mins <- c()
+    maxs <- c()
+    
+    for (j in continuous_vars){
+      mins <- c(mins, min(data[,j]))
+      maxs <- c(maxs, max(data[,j]))
+      data[,j] <- normalize(data[,j])
+    }
+    return(list("d" = data, "mins" = mins, "maxs" = maxs))
   }
-  return(list("d" = data, "mins" = mins, "maxs" = maxs))
 }
 
 de.normalize.data <- function(data, continuous_vars, m.list, M.list){
