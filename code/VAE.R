@@ -12,8 +12,23 @@ library(caret)
 source("code/utilities.R")
 
 # We load the original (non-binarized data).
-load("data/adult_data_binarized.RData", verbose = T)
+#load("data/adult_data_binarized.RData", verbose = T)
 #load("data/adult_data_categ.RData", verbose = T)
+
+# Try with Wine data and see if I can get similar results to https://lschmiddey.github.io/fastpages_/2021/03/14/tabular-data-variational-autoencoder.html
+adult.data1 <- read.table("wine.data", header = F, sep = ",")
+colnames(adult.data1) <- c("Wine", "Alcohol", "Malic.acid","Ash", "Acl", "Mg", "Phenols", "Flavanois", "Nonflavanoid.phenols", "Proanth", "Color-int", "Hue", "OD", "Proline")
+data_scaled <- scale(adult.data1)
+scale.centers <- attr(data_scaled, "scaled:center")
+scale.scales <- attr(data_scaled, "scaled:scale")
+#adult.data <- cbind(adult.data1[,1], as.data.frame(data_scaled))
+adult.data <- as.data.frame(data_scaled)
+colnames(adult.data) <- c("Wine", "Alcohol", "Malic.acid","Ash", "Acl", "Mg", "Phenols", "Flavanois", "Nonflavanoid.phenols", "Proanth", "Color-int", "Hue", "OD", "Proline")
+sample.size <- floor(nrow(adult.data) * 0.7)
+train.indices <- sample(1:nrow(adult.data), size = sample.size)
+x_train <- adult.data[train.indices, ]
+x_test <- adult.data[-train.indices, ]
+################################### This is just for testing wrt the guide (testing my thought that the Gaussian assumptions are too restrictive for our adult.data!)
 
 # List of continuous variables.
 cont <- c("age","fnlwgt","education_num","capital_gain","capital_loss","hours_per_week")
@@ -21,7 +36,7 @@ cont <- c("age","fnlwgt","education_num","capital_gain","capital_loss","hours_pe
 cat <- setdiff(names(adult.data), cont)
 cat <- cat[-length(cat)] # Remove the label "y"!
 
-adult.data.normalized <- normalize.data(data = adult.data, continuous_vars = cont) # returns list with data, mins and maxs.
+adult.data.normalized <- normalize.data(data = adult.data, continuous_vars = cont, F) # returns list with data, mins and maxs.
 summary(adult.data.normalized)
 adult.data <- adult.data.normalized[[1]] # we are only interested in the data for now. 
 
@@ -38,8 +53,8 @@ train_indices <- train_and_test_data[[4]]
 
 # Following this guide: https://www.datatechnotes.com/2020/06/how-to-build-variational-autoencoders-in-R.html
 
-latent_dim <- 5 # This sets the size of the latent representation (vector), 
-intermediate_dim <- 18
+latent_dim <- 3L # This sets the size of the latent representation (vector), 
+intermediate_dim <- 12L
 # defined by the parameters z_mean and z_log_var. 
 input_size <- ncol(x_train) 
 
@@ -64,48 +79,32 @@ sampling <- function(args){
 z <- list(enc_mean, enc_log_var) %>% 
   layer_lambda(sampling, name = "enc_output")
 
-encoder <- keras_model(enc_input, c(z), name = "encoder_model") # c(z_mean, z_log_var, z) 
-summary(encoder)
 
-
-latent_inputs <- layer_input(shape = c(latent_dim), name = "dec_input")
-decoder_layer <- layer_dense(latent_inputs, units = intermediate_dim, activation = "relu", name = "dec_hidden")
-outputs <- layer_dense(decoder_layer, input_size, activation = "sigmoid", name = "dec_output") 
+#latent_inputs <- layer_input(shape = c(latent_dim), name = "dec_input")
+decoder_layer <- layer_dense(units = intermediate_dim, activation = "relu", name = "dec_hidden")
+outputs <- layer_dense(units = input_size, name = "dec_output") 
 # Use the sigmoid activation to restrict data to (0,1) since we are dealing with normalized input data. 
 # Would it be possible to test linear activation function here and normalize the decoded data later instead?
 # outputs <- layer_dense(decoder_layer, input_size) # We test this here.  
 
 
-decoder <- keras_model(latent_inputs, outputs, name = "decoder_model")
-summary(decoder)
-
-vae_input <- layer_input(shape = c(input_size), name = "vae_input")
-vae_encoder_output <- encoder(vae_input)
-vae_decoder_output <- decoder(vae_encoder_output)
-vae <- keras_model(vae_input, vae_decoder_output, name = "VAE")
+vae_encoder_output <- decoder_layer(z)
+vae_decoder_output <- outputs(vae_encoder_output)
+vae <- keras_model(enc_input, vae_decoder_output, name = "VAE")
 summary(vae)
-
-# vae <- keras_model(enc_input, z_decoded_mean)
-# summary(vae)
-# 
 
 vae_loss <- function(enc_mean, enc_log_var){
   # Loss function for our VAE (with Gaussian assumptions).
   vae_reconstruction_loss <- function(y_true, y_predict){
-    loss_factor <- 10 # Give weight to the reconstruction in the loss function ("hyperparameter")
-    #reconstruction_loss <- metric_mean_squared_error(y_true, y_predict) # Or binary cross entropy?
+    loss_factor <- 1 # Give weight to the reconstruction in the loss function ("hyperparameter")
+    reconstruction_loss <- metric_mean_squared_error(y_true, y_predict) # Or binary cross entropy?
     #reconstruction_loss <- loss_binary_crossentropy(y_true, y_predict)
-    reconstruction_loss <- k_mean(k_square(y_true - y_predict))
+    #reconstruction_loss <- k_mean(k_square(y_true - y_predict))
     return(reconstruction_loss*loss_factor)
   }
   
   vae_kl_loss <- function(encoder_mu, encoder_log_variance){
-    kl <- -1/2*k_mean(1 + encoder_log_variance - k_square(encoder_mu) - k_exp(encoder_log_variance)) # Or axis = -1?
-    return(kl)
-  }
-  
-  vae_kl_loss_metric <- function(y_true, y_pred){
-    kl <- -1/2*k_mean(1 + encoder_log_variance - k_square(encoder_mu) - k_exp(encoder_log_variance), axis = -1) # Or axis = -1?
+    kl <- -1/2*k_sum(1 + encoder_log_variance - k_square(encoder_mu) - k_exp(encoder_log_variance), axis = -1L) # Or axis = -1?
     return(kl)
   }
   
@@ -118,87 +117,118 @@ vae_loss <- function(enc_mean, enc_log_var){
 }
 
 
-vae_loss <- function(y_true, y_pred){
-  xent_loss=(input_size/1.0)*loss_binary_crossentropy(y_true, y_pred) # Prøver med mean squared error eller kullback leibler.
-  #xent_loss=(input_size/1.0)*loss_mean_squared_error(input, z_decoded_mean)
-  #xent_loss=(input_size/1.0)*loss_kullback_leibler_divergence(input, z_decoded_mean)
-  kl_loss=-0.5*k_mean(1+enc_log_var-k_square(enc_mean)-k_exp(enc_log_var), axis=-1)
-  return(xent_loss + kl_loss)
-}
+# vae_loss <- function(y_true, y_pred){
+#   xent_loss=1.0*loss_mean_squared_error(y_true, y_pred) # Prøver med mean squared error eller kullback leibler.
+#   #xent_loss=(input_size/1.0)*loss_mean_squared_error(input, z_decoded_mean)
+#   #xent_loss=(input_size/1.0)*loss_kullback_leibler_divergence(input, z_decoded_mean)
+#   kl_loss=-0.5*k_mean(1+enc_log_var-k_square(enc_mean)-k_exp(enc_log_var), axis=-1L)
+#   return(xent_loss + kl_loss)
+# }
 
-#vae %>% compile(optimizer = "rmsprop", loss = vae_loss(enc_mean, enc_log_var))#custom_metric("vae_loss", vae_loss(enc_mean, enc_log_var)))
-#vae %>% compile(optimizer = "rmsprop", loss = vae_loss(enc_mean, enc_log_var))
-vae %>% compile(optimizer = "rmsprop", loss = vae_loss)
-#custom_metric("vae_loss_metrici", function(y_true, y_pred){v_loss(y_true, y_pred)})
+# Define encoder. 
+encoder <- keras_model(enc_input, list(enc_mean, enc_log_var, z), name = "encoder_model") 
+summary(encoder)
+
+# Define decoder. 
+decoder_input <- layer_input(shape = latent_dim)
+decoder_hidden <- decoder_layer(decoder_input)
+decoder_output <- outputs(decoder_hidden)
+decoder <- keras_model(decoder_input, decoder_output, name = "decoder_model")
+summary(decoder)
+
+
+vae %>% compile(optimizer = optimizer_adam(learning_rate = 1e-3), loss = vae_loss(enc_mean, enc_log_var))
 summary(vae)
 
-
-### Generator — not sure how this fits in to my model yet.
-# dec_input <- layer_input(shape = latent_dim)
-# h_decoded_2 <- decoder_layer(dec_input)
-# x_decoded_mean_2 <- decoder_mean(h_decoded_2)
-# generator <- keras_model(dec_input, x_decoded_mean_2)
-# summary(generator)
 
 # Training/fitting the model.
 vae %>% fit(
   x = data.matrix(x_train),
-  #y = NULL,
   y = data.matrix(x_train),
   shuffle = T,
-  epochs = 20,
-  batch_size = 64,
+  epochs = 200,
+  batch_size = 100,
   validation_data = list(data.matrix(x_test), data.matrix(x_test)),
   verbose = 1
 )
 
 
-# Tester å generere noe data nedenfor:
-n = 10
-test =  x_test[0:n,]
-x_test_encoded <- predict(encoder, data.matrix(test))
 
-decoded_data = decoder %>% predict(x_test_encoded) # Hvorfor bruke "generator" her og ikke "decoderen" fra over?
+############################ Make some fake data!
+generation_method <- 1
+K <- 10000
+variational_parameters <- encoder %>% predict(data.matrix(x_test))
+v_means <- variational_parameters[[1]]
+v_log_vars <- variational_parameters[[2]] # Det virker som om den ikke klarer å lære brede standardavvik, siden dataen ikke er normalfordelt!
+# Jeg mistenker at antagelsen om Gaussisk latent fordeling har skyld i dette!
+v_zs <- variational_parameters[[3]]
 
-# Ikke spesielt like foreløpig!
-head(test[,cont])
-decoded_data <- as.data.frame(decoded_data)
-colnames(decoded_data) <- colnames(test)
-head(decoded_data[,cont])
+# Could generate data in two different ways now!
+# 1) Use the means and vars from the encoder to sample from MVN, then decode the data.
+# 2) Use the z's: Sample from them, add some small noise to the samples, then decode the data. 
 
-head(test[,1:6])
-head(decoded_data[,1:6])
+if (generation_method == 1){
+  library(MASS)
+  s <- mvrnorm(n = K, mu = colMeans(v_means), Sigma = diag(colMeans((exp(v_log_vars/2))^2))) 
+} else if (generation_method == 2){
+  r <- slice_sample(as.data.frame(v_zs), n = K, replace = T) # Sample K rows from the z's. 
+  s <- jitter(data.matrix(r), amount = 0) # Add some uniform noise to r.
+}
 
-# I want to try to generate new data points from the decoder.
-#s <- rnorm(1000) # Generate some random data. 
-#library(dae)
-#s <- rmvnorm(rep(0, latent_dim), V = diag(10))
-s <- matrix(rnorm(100000*latent_dim, mean = 0, sd = 12), ncol = latent_dim)
+# Decode our latent sample s.
 decoded_data_rand <- decoder %>% predict(s)
-head(decoded_data_rand)
 decoded_data_rand <- as.data.frame(decoded_data_rand)
 colnames(decoded_data_rand) <- colnames(x_train)
 head(decoded_data_rand)
 
-# Normalize the decoded data in cases where we dont use sigmoid as activation of the output!
-# decoded_data_rand.normalized <- normalize.data(data = decoded_data_rand, continuous_vars = cont)
-# decoded_data_rand <- decoded_data_rand.normalized[[1]] # we are only interested in the data for now. 
+##### Revert scaling for both datasets (when using standardscaler)
+####### This was used when testing with the wine data!
+#whole_centers <- as.data.frame(transpose(data.table(replicate(scale.centers,n= nrow(data)))))
+#colnames(whole_centers) <- c("Alcohol", "Malic.acid","Ash", "Acl", "Mg", "Phenols", "Flavanois", "Nonflavanoid.phenols", "Proanth", "Color-int", "Hue", "OD", "Proline")
+#data <- adult.data[,-1]*scale.scales + whole_centers
+data_orig <- t(apply(adult.data, 1, function(r)r*scale.scales + scale.centers))
+#adult.data <- cbind(adult.data[,1], as.data.frame(data_orig))
+adult.data <- as.data.frame(data_orig)
+colnames(adult.data) <- c("Wine", "Alcohol", "Malic.acid","Ash", "Acl", "Mg", "Phenols", "Flavanois", "Nonflavanoid.phenols", "Proanth", "Color-int", "Hue", "OD", "Proline")
+decoded_data_nonscaled <- t(apply(decoded_data_rand, 1, function(r)r*scale.scales + scale.centers))
+#decoded_data_rand <- cbind(decoded_data_rand[,1], as.data.frame(decoded_data_nonscaled))
+decoded_data_rand <- as.data.frame(decoded_data_nonscaled)
+colnames(decoded_data_rand) <- c("Wine", "Alcohol", "Malic.acid","Ash", "Acl", "Mg", "Phenols", "Flavanois", "Nonflavanoid.phenols", "Proanth", "Color-int", "Hue", "OD", "Proline")
 
-# Reverse one hot encoding might be a good idea!
+## Sample some from each to see how they look.
+slice_sample(adult.data, n = 10)
+slice_sample(decoded_data_rand, n = 10)
 
+
+# Group by wines
+for (i in 1:nrow(decoded_data_rand)){
+  if (decoded_data_rand[i,1] <= 1){
+    decoded_data_rand[i,1] <- 1  
+  } else if (decoded_data_rand[i,1] <= 2){
+    decoded_data_rand[i,1] <- 2
+  } else {
+    decoded_data_rand[i,1] <- 3
+  }
+  
+}
+
+summary(adult.data)
+summary(decoded_data_rand)
+
+colMeans(decoded_data_rand %>% filter(Wine == 1))
+colMeans(decoded_data_rand %>% filter(Wine == 2))
+colMeans(decoded_data_rand %>% filter(Wine == 3))
+
+
+# Revert the one hot encoding
 adult.data.reverse.onehot <- reverse.onehot.encoding(adult.data, cont, cat, has.label = T)
 decoded_data_rand <- reverse.onehot.encoding(decoded_data_rand, cont, cat, has.label = F)
 
-summary(decoded_data_rand$age)
-summary(adult.data$age)
+summary(adult.data.reverse.onehot)
+summary(decoded_data_rand)
 
-summary(decoded_data_rand$fnlwgt)
-boxplot(decoded_data_rand$fnlwgt)
-summary(adult.data$fnlwgt)
-boxplot(adult.data$fnlwgt)
-
-summary(decoded_data_rand[,cont])
-summary(adult.data[,cont])
+summary(adult.data.reverse.onehot[, cont])
+summary(decoded_data_rand[, cont])
 
 cap_loss_real <- (adult.data %>% dplyr::select(capital_loss))[[1]]
 cap_loss_gen <- (decoded_data_rand %>% dplyr::select(capital_loss))[[1]]
@@ -228,3 +258,52 @@ table(decoded_data_rand$sex)/sum(table(decoded_data_rand$sex))
 table(adult.data.reverse.onehot$native_country)/sum(table(adult.data.reverse.onehot$native_country))
 table(decoded_data_rand$native_country)/sum(table(decoded_data_rand$native_country))
 
+
+
+#### For illustration purposes we make a scatter plot of the latent space (when 2 dimensional).
+library(ggplot2)
+library(dplyr)
+latent_train_data <- (encoder %>% predict(data.matrix(x_train)))[[3]] # We only need the latent values for this. 
+if (latent_dim == 2){
+  df <- data.frame(cbind(latent_train_data, train_and_test_data[[2]]))
+  df$X3 <- as.factor(df$X3)
+  colnames(df) <- c("Z1", "Z2", "Label")
+  plt <- tibble(df) %>% 
+    ggplot(aes(x = Z1, y = Z2, color = Label)) +
+    geom_point() +
+    ggtitle("Training data representation from VAE in 2D latent space") +
+    theme_minimal()
+  print(plt)
+} else {
+  # Use PCA to represent our training data (first two principal components)
+  pca <- princomp(latent_train_data)
+  print(summary(pca))
+  scores <- pca$scores
+  df <- data.frame(cbind(scores[,1], scores[,2], train_and_test_data[[2]]))
+  df$X3 <- as.factor(df$X3)
+  colnames(df) <- c("Z1", "Z2", "Label")
+  plt <- tibble(df) %>% 
+    ggplot(aes(x = Z1, y = Z2, color = Label)) +
+    geom_point() +
+    ggtitle(paste0("PCA training data representation from VAE in ", latent_dim,"D latent space")) +
+    theme_minimal()
+  print(plt)
+}
+
+# Noen nøkkeltall. 
+mean(df$Z1)
+mean(df$Z2)
+sd(df$Z1)
+sd(df$Z2)
+mean(s[,1])
+mean(s[,2])
+sd(s[,1])
+sd(s[,2])
+mean((df %>% filter(Label == 1) %>% dplyr::select(Z1))$Z1)
+mean((df %>% filter(Label == 1) %>% dplyr::select(Z2))$Z2)
+mean((df %>% filter(Label == 0) %>% dplyr::select(Z1))$Z1)
+mean((df %>% filter(Label == 0) %>% dplyr::select(Z2))$Z2)
+sd((df %>% filter(Label == 1) %>% dplyr::select(Z1))$Z1)
+sd((df %>% filter(Label == 1) %>% dplyr::select(Z2))$Z2)
+sd((df %>% filter(Label == 0) %>% dplyr::select(Z1))$Z1)
+sd((df %>% filter(Label == 0) %>% dplyr::select(Z2))$Z2)

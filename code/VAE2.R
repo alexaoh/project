@@ -93,7 +93,7 @@ CustomVariationalLayer <- R6Class("CustomVariationalLayer",
                                         1 + enc_log_var - k_square(enc_mean) - k_exp(enc_log_var),
                                         axis = -1L
                                       )
-                                      k_mean(100*xent_loss + kl_loss)
+                                      k_mean(1*xent_loss + kl_loss)
                                     },
 
                                     call = function(inputs, mask = NULL) {
@@ -126,7 +126,7 @@ vae %>% compile(
 
 vae %>% fit(
   x = data.matrix(x_train), y = NULL,
-  epochs = 20,
+  epochs = 10,
   batch_size = 64,
   validation_data = list(data.matrix(x_test), NULL)
 ) 
