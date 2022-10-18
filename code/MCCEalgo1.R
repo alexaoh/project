@@ -253,12 +253,26 @@ H <- H[s,-which(names(new_predicted_data) %in% c("y_pred","y"))]
 K <- as.numeric(CLI.args[3]) # Assume that the third command line input is an integer. 
 
 # Generation of counterfactuals for each point, before post-processing.
-generate_counterfact_for_H <- function(H_l, K.num){
+generate_counterfact_for_H <- function(H_l, K.num, method){
   D_h_per_point <- list()
   for (i in 1:nrow(H_l)){
     # x_h is a factual. 
     x_h <- H_l[i,]
-    D_h_per_point[[i]] <- generate(x_h, K = K.num) # I artikkelen hadde de 10000.
+    if (method == "MCCE"){
+      D_h_per_point[[i]] <- generate(x_h, K = K.num) # I artikkelen hadde de 10000.  
+    } else if (method == "ModMCCE"){ # I have now simply added some code from "VAE.R". I assume that the variables are already in the scope of the program, simply for testing now. 
+      r <- slice_sample(as.data.frame(v_zs), n = K, replace = T) # Sample K rows from the z's. 
+      s <- jitter(data.matrix(r), amount = 0) # Add some uniform noise to r.
+      decoded_data_rand <- decoder %>% predict(s)
+      decoded_data_rand <- as.data.frame(decoded_data_rand)
+      colnames(decoded_data_rand) <- colnames(x_train) # Antar her at x_train har ANN-form (design-matrise), slik som i VAE.R
+      # Sikkert bedre å bare flytte hele post-processingen til VAE.R filen, slik at jeg har to forskjellige (med nesten samme kode)!
+      decoded_data_rand <- reverse.onehot.encoding(decoded_data_rand, cont, cat, has.label = F)
+      data_orig2 <- t(apply(decoded_data_rand[,cont], 1, function(r)r*x_test.normalization$sds + x_test.normalization$means))
+      data_orig2 <- cbind(data_orig2, as.data.frame(decoded_data_rand[,-which(names(decoded_data_rand) %in% cat)]))
+      ###### Linjen over er feil!!! Usikker på det! (tror det er fordi jeg mikser filene mellom seg! Prøv å skrive bedre kode i morgen ryddigere!)
+      D_h_per_point[[i]] <- data_orig2
+    }
     cat("Generated for point ",i,"\n")
   }
   return(D_h_per_point)
@@ -267,7 +281,7 @@ generate_counterfact_for_H <- function(H_l, K.num){
 # Use CLI.args to make the name of the file automatically.
 filename_generation <- paste(CLI.args[1],"_H",CLI.args[2],"_K",CLI.args[3],"_bin",CLI.args[5], sep="") 
 if (CLI.args[4]){
-  D_h_per_point <- generate_counterfact_for_H(H_l = H, K) # Generate the matrix D_h for each factual we want to explain (in H)
+  D_h_per_point <- generate_counterfact_for_H(H_l = H, K, method = "ModMCCE") # Generate the matrix D_h for each factual we want to explain (in H)
   save(D_h_per_point, file = paste("results/D_hs/",filename_generation,".RData",sep="")) # Save the generated D_h per point.
 } else if (CLI.args[4] != T){
   load(paste("results/D_hs/",filename_generation,".RData",sep=""), verbose = T)
@@ -288,6 +302,23 @@ post.processing <- function(D_h, H, data){ # 'data' is used to calculate normali
     } else {
       norm.factors[[i]] <- NA
     }
+  }
+  
+  make_actionable <- function(D_h, fixed_covariates, factual){
+    # Function used to remove all points from D_h which do not have the correct fixed covariate values as in the factual.
+    factual_values <- factual[fixed_covariates]
+    return(D_h[D_h[,fixed_covariates] == factual_values])
+  }
+  
+  fulfill_crit2 <- function(D_h_pp, H){
+    # Make sure that each possible counterfactual (per factual) has the correct fixed values. 
+    # This is not necessary for MCCE, but is necessary for ModMCCE (using VAE, not conditioned on the fixed features).
+    for (i in 1:length(D_h_pp)){
+      D_h <- D_h_pp[[i]]
+      D_h$age <- round(D_h$age) # This is done to be certain that ages are whole numbers. Should definitely be done somewhere else!
+      D_h_pp[[i]] <- make_actionable(D_h, fixed_features, H[i,])# Make sure that the counterfactuals are actionable (not necessary for trees, necessary for VAE).
+    }
+    return(D_h_pp)
   }
   
   
@@ -313,6 +344,7 @@ post.processing <- function(D_h, H, data){ # 'data' is used to calculate normali
     for (i in 1:length(D_h_pp)){
       D_h <- D_h_pp[[i]]
       D_h_pp[[i]] <- fulfill_crit3_D_h(D_h, c, pred.method)
+      #D_h_pp[[i]] <- # Make sure that the counterfactuals are actionable (not necessary for trees, necessary for VAE).
     }
     return(D_h_pp)
   }

@@ -27,7 +27,7 @@ normalize.data <- function(data, continuous_vars, standardscaler){
   # Normalizes our data and returns the mins and maxs of all continuous variables, such that we can de-normalize later. 
   if (standardscaler){
     d <- scale(data[,cont])
-    cat <- setdiff(names(adult.data), cont)
+    cat <- setdiff(names(data), cont)
     full_data <- cbind(d, data[,cat])[,colnames(data)]
     return(list("d" = full_data, "means" = attr(d, "scaled:center"), "sds" = attr(d, "scaled:scale")))
   } else {
@@ -50,6 +50,7 @@ de.normalize.data <- function(data, continuous_vars, m.list, M.list){
     data[,v] <- de.normalize(data[,v], m = m.list[j], M = M.list[j])
   }
   return(data)
+  # Should also be extended to the standardscaler option eventually!
 }
 
 make.train.and.test <- function(data, train.ratio = 2/3){
