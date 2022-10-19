@@ -94,7 +94,7 @@ make.data.for.ANN <- function(data, cont){
   return(cbind(numbers, data_encoded, data["y"]))
 }
 
-reverse.onehot.encoding <- function(data, cont, cat, has.label){
+reverse.onehot.encoding <- function(data, cont, categ, has.label){
   # Reverse one-hot encoded design matrices. The function uses the design matrix (data) and two lists of names (continuous and categorical).
   text <- data[,-which(names(data) %in% cont)]
   if (has.label){
@@ -102,13 +102,13 @@ reverse.onehot.encoding <- function(data, cont, cat, has.label){
   }
   numbers <- data[,which(names(data) %in% cont)]
   new_text <- c()
-  for (name in cat){
+  for (name in categ){
     d <- data %>% dplyr::select(starts_with(name))
     categorical_value <- names(d)[max.col(d)]
     new_text <- cbind(new_text, categorical_value)
   }
   new_text <- as.data.frame(new_text)
-  colnames(new_text) <- cat
+  colnames(new_text) <- categ
   
   if (has.label){
     r <- cbind(numbers, new_text, data["y"])

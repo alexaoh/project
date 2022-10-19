@@ -19,8 +19,8 @@ load("data/adult_data_binarized.RData", verbose = T)
 # List of continuous variables.
 cont <- c("age","fnlwgt","education_num","capital_gain","capital_loss","hours_per_week")
 # List of categorical variables (used to reverse onehot encode later!)
-cat <- setdiff(names(adult.data), cont)
-cat <- cat[-length(cat)] # Remove the label "y"!
+categ <- setdiff(names(adult.data), cont)
+categ <- categ[-length(categ)] # Remove the label "y"!
 
 adult.data <- make.data.for.ANN(adult.data, cont)
 
@@ -31,18 +31,29 @@ summary(train_and_test_data) # Returned list.
 x_train <- train_and_test_data[[1]]
 # We do not really need the output variable y when building a VAE.
 x_test <- train_and_test_data[[3]]
-train_indices <- train_and_test_data[[4]]
+train_indices <- train_and_test_data[[5]]
 
 # Normalize the data AFTER splitting to avoid data leakage!
-x_train.normalization <- normalize.data(data = x_train, continuous_vars = cont, standardscaler = T) # returns list with data, mins and maxs.
+x_train.normalization <- normalize.data(data = x_train, continuous_vars = cont, standardscaler = F) # returns list with data, mins and maxs.
 x_train <- x_train.normalization[[1]] # we are only interested in the data for now. 
-x_test.normalization <- normalize.data(data = x_test, continuous_vars = cont, standardscaler = T) # returns list with data, mins and maxs.
+
+# Make validation data also, in order to not validate using the test data. 
+sample.size.valid <- floor(nrow(x_test) * 1/3)
+valid.indices <- sample(1:nrow(x_test), size = sample.size.valid)
+x_valid <- x_test[valid.indices, ]
+x_test <- x_test[-valid.indices, ]
+
+x_test.normalization <- normalize.data(data = x_test, continuous_vars = cont, standardscaler = F) # returns list with data, mins and maxs.
 x_test <- x_test.normalization[[1]] # we are only interested in the data for now. 
 
+x_valid.normalization <- normalize.data(data = x_valid, continuous_vars = cont, standardscaler = F) # returns list with data, mins and maxs.
+x_valid <- x_valid.normalization[[1]] # we are only interested in the data for now. 
 
 # Scale the adult data as well, such that we can compare the data sets after generation. 
-adult.data.normalization <- normalize.data(data = adult.data, continuous_vars = cont, standardscaler = T)
+adult.data.normalization <- normalize.data(data = adult.data, continuous_vars = cont, standardscaler = F)
 adult.data <- adult.data.normalization[[1]]
+
+
 
 # Build the VAE.
 latent_dim <- 8L # This sets the size of the latent representation (vector), 
@@ -150,7 +161,7 @@ history <- vae %>% fit(
   shuffle = T,
   epochs = 30,
   batch_size = 16,
-  validation_data = list(data.matrix(x_test), data.matrix(x_test)),
+  validation_data = list(data.matrix(x_valid), data.matrix(x_valid)),
   verbose = 1,
   callbacks = callbacks_list
 )
@@ -159,7 +170,7 @@ plot(history)
 
 ############################ Make some fake data!
 generation_method <- 2
-K <- 100000
+K <- 1e6L
 variational_parameters <- encoder %>% predict(data.matrix(x_test))
 v_means <- variational_parameters[[1]]
 v_log_vars <- variational_parameters[[2]] # Det virker som om den ikke klarer å lære brede standardavvik, siden dataen ikke er normalfordelt!
@@ -215,8 +226,8 @@ head(decoded_data_rand)
 #decoded_data_rand <- de.normalize.data(decoded_data_rand, cont, x_test.normalization$mins, x_test.normalization$maxs)
 
 # Revert the one hot encoding
-adult.data.reverse.onehot <- reverse.onehot.encoding(adult.data, cont, cat, has.label = T)
-decoded_data_rand <- reverse.onehot.encoding(decoded_data_rand, cont, cat, has.label = F)
+adult.data.reverse.onehot <- reverse.onehot.encoding(adult.data, cont, categ, has.label = T)
+decoded_data_rand <- reverse.onehot.encoding(decoded_data_rand, cont, categ, has.label = F)
 
 summary(adult.data.reverse.onehot)
 summary(decoded_data_rand)
@@ -323,6 +334,10 @@ sd((df %>% filter(Label == 0) %>% dplyr::select(Z2))$Z2)
 
 ###################################### Center and scale the datasets "back" to the original scales. 
 
+# De-normalize the normalized (min-max data).
+#adult.data.reverse.onehot <- de.normalize.data(adult.data.reverse.onehot, cont, adult.data.normalization$mins, adult.data.normalization$maxs)
+#decoded_data_rand <- de.normalize.data(decoded_data_rand, cont, x_test.normalization$mins, x_test.normalization$maxs)
+
 # This can be done easily for the adult data, since this was centered and scaled earlier. 
 data_orig <- t(apply(adult.data[,cont], 1, function(r)r*adult.data.normalization$sds + adult.data.normalization$means))
 data_orig <- cbind(data_orig, as.data.frame(adult.data.reverse.onehot[,-which(names(adult.data) %in% c(cont,"y"))]))
@@ -330,8 +345,7 @@ adult.data.reverse.onehot <- data_orig
 
 # There is no clear way of doing it for the generated/decoded data, but we will use the center and the scale of the test-data here. 
 data_orig2 <- t(apply(decoded_data_rand[,cont], 1, function(r)r*x_test.normalization$sds + x_test.normalization$means))
-data_orig2 <- cbind(data_orig2, as.data.frame(decoded_data_rand[,-which(names(x_test) %in% c(cont,"y"))]))
-#### Linjen over er feil tror jeg!!!!! Noe rart med rekkefølgen her!! Sjekk det!
+data_orig2 <- cbind(data_orig2, as.data.frame(decoded_data_rand[,-which(names(decoded_data_rand) %in% cont)]))
 decoded_data_rand <- data_orig2
 
 summary(adult.data.reverse.onehot[, cont])
