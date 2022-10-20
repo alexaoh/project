@@ -22,10 +22,10 @@ cont <- c("age","fnlwgt","education_num","capital_gain","capital_loss","hours_pe
 categ <- setdiff(names(adult.data), cont)
 categ <- categ[-length(categ)] # Remove the label "y"!
 
-adult.data <- make.data.for.ANN(adult.data, cont)
+adult.data.onehot <- make.data.for.ANN(adult.data, cont)
 
 # Make train and test data.
-train_and_test_data <- make.train.and.test(data = adult.data) # The function returns two matrices (x) and two vectors (y). 
+train_and_test_data <- make.train.and.test(data = adult.data.onehot) # The function returns two matrices (x) and two vectors (y). 
 # In addition, it returns two dataframes that are the original dataframe split into train and test (containing y's and x's).
 summary(train_and_test_data) # Returned list. 
 x_train <- train_and_test_data[[1]]
@@ -34,7 +34,7 @@ x_test <- train_and_test_data[[3]]
 train_indices <- train_and_test_data[[5]]
 
 # Normalize the data AFTER splitting to avoid data leakage!
-x_train.normalization <- normalize.data(data = x_train, continuous_vars = cont, standardscaler = F) # returns list with data, mins and maxs.
+x_train.normalization <- normalize.data(data = x_train, continuous_vars = cont, standardscaler = T) # returns list with data, mins and maxs.
 x_train <- x_train.normalization[[1]] # we are only interested in the data for now. 
 
 # Make validation data also, in order to not validate using the test data. 
@@ -43,15 +43,15 @@ valid.indices <- sample(1:nrow(x_test), size = sample.size.valid)
 x_valid <- x_test[valid.indices, ]
 x_test <- x_test[-valid.indices, ]
 
-x_test.normalization <- normalize.data(data = x_test, continuous_vars = cont, standardscaler = F) # returns list with data, mins and maxs.
+x_test.normalization <- normalize.data(data = x_test, continuous_vars = cont, standardscaler = T) # returns list with data, mins and maxs.
 x_test <- x_test.normalization[[1]] # we are only interested in the data for now. 
 
-x_valid.normalization <- normalize.data(data = x_valid, continuous_vars = cont, standardscaler = F) # returns list with data, mins and maxs.
+x_valid.normalization <- normalize.data(data = x_valid, continuous_vars = cont, standardscaler = T) # returns list with data, mins and maxs.
 x_valid <- x_valid.normalization[[1]] # we are only interested in the data for now. 
 
 # Scale the adult data as well, such that we can compare the data sets after generation. 
-adult.data.normalization <- normalize.data(data = adult.data, continuous_vars = cont, standardscaler = F)
-adult.data <- adult.data.normalization[[1]]
+adult.data.normalization <- normalize.data(data = adult.data.onehot, continuous_vars = cont, standardscaler = T)
+adult.data.onehot <- adult.data.normalization[[1]]
 
 
 
@@ -169,12 +169,11 @@ history <- vae %>% fit(
 plot(history)
 
 ############################ Make some fake data!
-generation_method <- 2
-K <- 1e6L
-variational_parameters <- encoder %>% predict(data.matrix(x_test))
+generation_method <- 1
+K <- 1e5L
+variational_parameters <- encoder %>% predict(data.matrix(x_test)) # Eller bruke treningsdataene her?
 v_means <- variational_parameters[[1]]
-v_log_vars <- variational_parameters[[2]] # Det virker som om den ikke klarer å lære brede standardavvik, siden dataen ikke er normalfordelt!
-# Jeg mistenker at antagelsen om Gaussisk latent fordeling har skyld i dette!
+v_log_vars <- variational_parameters[[2]] 
 v_zs <- variational_parameters[[3]]
 
 # Could generate data in two different ways now!
@@ -185,9 +184,11 @@ if (generation_method == 1){
   library(MASS)
   mu <- colMeans(v_means)
   sigma <- diag(colMeans((exp(v_log_vars/2))^2))
-  s <- mvrnorm(n = K, mu = mu, Sigma = sigma) # Blir det korrekt å sample fra en multivariat normalfordeling basert på mean av alle encoder means og stds?
+  #s <- mvrnorm(n = K, mu = mu, Sigma = sigma) # Blir det korrekt å sample fra en multivariat normalfordeling basert på mean av alle encoder means og stds?
   # Jeg tror ikke dette fungerer, fordi mye av variansen forsvinner (se illustrasjon av fordelingen til treningsdataene nedenfor!)
   # Dette går ikke bra, for man mister mye av variasjonen i hver fordeling virker det som!
+  s <- mvrnorm(n = K, mu = rep(0,ncol(v_means)), Sigma = diag(rep(1,ncol(v_means)))) # Try to sample from the prior we have put on the latent variables, aka N(0,1).
+  # This looks like it gives good results as well! Similar to the one with noise below!
 } else if (generation_method == 2){
   r <- slice_sample(as.data.frame(v_zs), n = K, replace = T) # Sample K rows from the z's. 
   s <- jitter(data.matrix(r), amount = 0) # Add some uniform noise to r.
@@ -226,7 +227,7 @@ head(decoded_data_rand)
 #decoded_data_rand <- de.normalize.data(decoded_data_rand, cont, x_test.normalization$mins, x_test.normalization$maxs)
 
 # Revert the one hot encoding
-adult.data.reverse.onehot <- reverse.onehot.encoding(adult.data, cont, categ, has.label = T)
+adult.data.reverse.onehot <- reverse.onehot.encoding(adult.data.onehot, cont, categ, has.label = T)
 decoded_data_rand <- reverse.onehot.encoding(decoded_data_rand, cont, categ, has.label = F)
 
 summary(adult.data.reverse.onehot)
@@ -339,7 +340,7 @@ sd((df %>% filter(Label == 0) %>% dplyr::select(Z2))$Z2)
 #decoded_data_rand <- de.normalize.data(decoded_data_rand, cont, x_test.normalization$mins, x_test.normalization$maxs)
 
 # This can be done easily for the adult data, since this was centered and scaled earlier. 
-data_orig <- t(apply(adult.data[,cont], 1, function(r)r*adult.data.normalization$sds + adult.data.normalization$means))
+data_orig <- t(apply(adult.data.reverse.onehot[,cont], 1, function(r)r*adult.data.normalization$sds + adult.data.normalization$means))
 data_orig <- cbind(data_orig, as.data.frame(adult.data.reverse.onehot[,-which(names(adult.data) %in% c(cont,"y"))]))
 adult.data.reverse.onehot <- data_orig
 
