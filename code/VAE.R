@@ -10,6 +10,7 @@ setwd("/home/ajo/gitRepos/project")
 library(keras)
 library(caret)
 library(dplyr)
+library(MASS)
 source("code/utilities.R")
 
 # We load the original (non-binarized data).
@@ -38,6 +39,7 @@ x_train.normalization <- normalize.data(data = x_train, continuous_vars = cont, 
 x_train <- x_train.normalization[[1]] # we are only interested in the data for now. 
 
 # Make validation data also, in order to not validate using the test data. 
+# VALIDATION ER IKKE NØDVENDIG HVIS JEG ØNSKER Å SAMPLE FRA PRIOR VED GENERERING!
 sample.size.valid <- floor(nrow(x_test) * 1/3)
 valid.indices <- sample(1:nrow(x_test), size = sample.size.valid)
 x_valid <- x_test[valid.indices, ]
@@ -182,41 +184,49 @@ v_zs <- variational_parameters[[3]]
 # 1) Use the means and vars from the encoder to sample from MVN, then decode the data. Or simply sample from a standard normal?
 # 2) Use the z's: Sample from them, add some small noise to the samples, then decode the data. 
 
-if (generation_method == 1){
-  library(MASS)
-  mu <- colMeans(v_means)
-  sigma <- diag(colMeans((exp(v_log_vars/2))^2))
-  #s <- mvrnorm(n = K, mu = mu, Sigma = sigma) # Blir det korrekt å sample fra en multivariat normalfordeling basert på mean av alle encoder means og stds?
-  # Jeg tror ikke dette fungerer, fordi mye av variansen forsvinner (se illustrasjon av fordelingen til treningsdataene nedenfor!)
-  # Dette går ikke bra, for man mister mye av variasjonen i hver fordeling virker det som!
+# Tried to match these numbers to the numbers used in the project report.
+if (generation_method == 4){
+  # Sample from prior p(z), N(0,1)
+  #mu <- colMeans(v_means)
+  #sigma <- diag(colMeans((exp(v_log_vars/2))^2))
+  #s <- mvrnorm(n = K, mu = mu, Sigma = sigma) 
   s <- mvrnorm(n = K, mu = rep(0,ncol(v_means)), Sigma = diag(rep(1,ncol(v_means)))) # Try to sample from the prior we have put on the latent variables, aka N(0,1).
   # This looks like it gives good results as well! Similar to the one with noise below!
-} else if (generation_method == 2){
+} else if (generation_method == 3){
+  # Sample from the z's and add some uniform noise. 
   r <- slice_sample(as.data.frame(v_zs), n = K, replace = T) # Sample K rows from the z's. 
   s <- jitter(data.matrix(r), amount = 0) # Add some uniform noise to r.
+} else if (generation_method == 2){
+  # Sample K/nrow(x_train) times from latent space PER training data point. 
+   
+} else if (generation_method == 1){
+  # Run entire training data through entire VAE K/nrow(x_train) times.
+  # Generation method 4 and 3 should be equivalent in theory, but might be different in practice because of seed-problems.
+  # They should be similar because sigma and mu should be deterministically given per data point (when running x_train through the encoder).
+  
 }
 
-if (generation_method == 1){
-  # CHECK if sampling is "good"
-  scheck <- apply(s, MARGIN = 2, FUN = function(x){(x-mean(x))/sd(x)})
-  df <- data.frame(s)
-  colnames(df) <- c("Z1", "Z2")
-  plt <- tibble(df) %>% 
-    ggplot(aes(x = Z1, y = Z2)) +
-    geom_point() +
-    ggtitle("Sampled from 2d normal") +
-    theme_minimal()
-  print(plt)
-  
-  # Check if the data is sampled correctly from the multivariate Gaussian. 
-  # The sampling seems to be correct!
-  colMeans(v_means) - 3*colMeans((exp(v_log_vars/2)))
-  colMeans(v_means) + 3*colMeans((exp(v_log_vars/2)))
-  colMeans(v_means) - 2*colMeans((exp(v_log_vars/2)))
-  colMeans(v_means) + 2*colMeans((exp(v_log_vars/2)))
-  quantile(s[,1],c(0.01, 0.05, 0.95, 0.99))
-  quantile(s[,2],c(0.01, 0.05, 0.95, 0.99))
-}
+# if (generation_method == 1){
+#   # CHECK if sampling is "good"
+#   scheck <- apply(s, MARGIN = 2, FUN = function(x){(x-mean(x))/sd(x)})
+#   df <- data.frame(s)
+#   colnames(df) <- c("Z1", "Z2")
+#   plt <- tibble(df) %>% 
+#     ggplot(aes(x = Z1, y = Z2)) +
+#     geom_point() +
+#     ggtitle("Sampled from 2d normal") +
+#     theme_minimal()
+#   print(plt)
+#   
+#   # Check if the data is sampled correctly from the multivariate Gaussian. 
+#   # The sampling seems to be correct!
+#   colMeans(v_means) - 3*colMeans((exp(v_log_vars/2)))
+#   colMeans(v_means) + 3*colMeans((exp(v_log_vars/2)))
+#   colMeans(v_means) - 2*colMeans((exp(v_log_vars/2)))
+#   colMeans(v_means) + 2*colMeans((exp(v_log_vars/2)))
+#   quantile(s[,1],c(0.01, 0.05, 0.95, 0.99))
+#   quantile(s[,2],c(0.01, 0.05, 0.95, 0.99))
+# }
 
 
 # Decode our latent sample s.
@@ -266,6 +276,9 @@ table(decoded_data_rand$sex)/sum(table(decoded_data_rand$sex))
 table(adult.data.reverse.onehot$native_country)/sum(table(adult.data.reverse.onehot$native_country))
 table(decoded_data_rand$native_country)/sum(table(decoded_data_rand$native_country))
 
+# Could do things like this also! (compare tables of factors to each other)
+table(adult.data.reverse.onehot[,c("sex")], adult.data.reverse.onehot[,c("native_country")])/sum(table(adult.data.reverse.onehot[,c("sex")], adult.data.reverse.onehot[,c("native_country")]))
+table(decoded_data_rand[,c("sex")], decoded_data_rand[,c("native_country")])/sum(table(decoded_data_rand[,c("sex")], decoded_data_rand[,c("native_country")]))
 
 #### For illustration purposes we make a scatter plot of the latent space (when 2 dimensional).
 library(ggplot2)
@@ -354,6 +367,16 @@ decoded_data_rand <- data_orig2
 summary(adult.data.reverse.onehot[, cont])
 summary(decoded_data_rand[, cont])
 
+# Make scatter plots (qq-plots between the two data sets). For numerical features. 
+# This only works if both data sets have the same length. 
+plot(sort(adult.data.reverse.onehot$age), sort(sample(decoded_data_rand$age, size = nrow(adult.data.reverse.onehot))))
+plot(sort(adult.data.reverse.onehot$education_num), sort(sample(decoded_data_rand$education_num, size = nrow(adult.data.reverse.onehot))))
+
+## Check correlations between the numerical features. 
+cor(adult.data.reverse.onehot[,cont], slice_sample(decoded_data_rand[,cont], n = nrow(adult.data.reverse.onehot))) # Check between the two data sets. 
+cor(adult.data.reverse.onehot[,cont], adult.data.reverse.onehot[,cont]) # Check within each data set and compare the two.
+cor(decoded_data_rand[,cont], decoded_data_rand[,cont]) # Check within each data set and compare the two.
+
 cap_loss_real <- (adult.data %>% dplyr::select(capital_loss))[[1]]
 cap_loss_gen <- (decoded_data_rand %>% dplyr::select(capital_loss))[[1]]
 length(cap_loss_real[cap_loss_real != 0]) # Same as for cap_gain!
@@ -382,3 +405,26 @@ table(decoded_data_rand$sex)/sum(table(decoded_data_rand$sex))
 table(adult.data.reverse.onehot$native_country)/sum(table(adult.data.reverse.onehot$native_country))
 table(decoded_data_rand$native_country)/sum(table(decoded_data_rand$native_country))
 
+###################################### Try "deployment phase" in Olsen 2021 (page 10 + 11).
+# Forstår ikke helt hva de gjør!? Prøv å lese dette igjen senere!
+K <- 1
+variational_parameters <- encoder %>% predict(data.matrix(x_test[1,])) # Eller bruke treningsdataene her?
+v_means <- variational_parameters[[1]]
+v_log_vars <- variational_parameters[[2]] 
+
+sample.after <- function(K, v_means, v_log_vars){
+  # Sample from one test point. 
+  mu <- as.numeric(v_means)
+  sigma <- diag(as.numeric((exp(v_log_vars/2))^2))
+  mvrnorm(n = K, mu = mu, Sigma = sigma)
+}
+z_test <- sample.after(K, v_means, v_log_vars)
+dec_test <- decoder %>% predict(matrix(z_test, nrow = 1))
+dec_test <- as.data.frame(dec_test)
+colnames(dec_test) <- colnames(x_test)
+# De normalize the data according to the test data. 
+#decoded_data_rand <- de.normalize.data(decoded_data_rand, cont, x_test.normalization$mins, x_test.normalization$maxs)
+
+# Revert the one hot encoding
+adult.data.reverse.onehot <- reverse.onehot.encoding(adult.data.onehot, cont, categ, has.label = T)
+decoded_data_rand <- reverse.onehot.encoding(decoded_data_rand, cont, categ, has.label = F)
