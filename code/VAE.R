@@ -65,7 +65,9 @@ input_size <- ncol(x_train)
 enc_input <- layer_input(shape = c(input_size), name = "enc_input")
 layer_one <- layer_dense(enc_input, units=intermediate_dim, activation = "relu", name = "enc_hidden")
 enc_mean <- layer_dense(layer_one, latent_dim, name = "enc_mean")
-enc_log_var <- layer_dense(layer_one, latent_dim, name = "enc_log_var")
+enc_log_var <- layer_dense(layer_one, latent_dim, name = "enc_log_var") #activation = "softplus"
+# Ensure that the standard deviations are positive 
+# Not necessary here I think though, because these are the log-vars, which could be both positive and negative. 
 
 # Sampling function in the latent space. It samples the Gaussian distribution by using the mean and variance
 # that will be learned. It returns a sampled latent vector. 
@@ -75,7 +77,7 @@ sampling <- function(args){
   epsilon <- k_random_normal(shape = k_shape(z_mean),
                              mean = 0, stddev = 1) # Draws samples from standard normal, adds element-wise to a vector. 
   return(z_mean + k_exp(z_log_var/2) * epsilon) # element-wise exponential, in order to transform the standard normal samples to 
-  # sampling from our latent variable distribution (the reparametrization trick).
+  # sampling from our latent variable distribution (the reparameterization trick).
 }
 
 # Point randomly sampled from the variational / approximated posterior.   
@@ -379,3 +381,4 @@ table(decoded_data_rand$sex)/sum(table(decoded_data_rand$sex))
 
 table(adult.data.reverse.onehot$native_country)/sum(table(adult.data.reverse.onehot$native_country))
 table(decoded_data_rand$native_country)/sum(table(decoded_data_rand$native_country))
+
