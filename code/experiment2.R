@@ -1,5 +1,5 @@
-# We try to implement our first VAE for our adult dataset
-
+# Experiment 2: Make generative model for our data set and sample synthetic data. 
+# Our goal is for the synthetic (generated) sample to be very similar to our input data. 
 
 rm(list = ls())  # make sure to remove previously loaded variables into the Session.
 
@@ -13,6 +13,9 @@ library(dplyr)
 library(MASS)
 source("code/utilities.R")
 
+# Parameter for standardscaler (centering and scaling) or not (normalization, i.e. min-max scaling).
+standardscaler <- T
+
 # We load the data (binarized or categorical).
 load("data/adult_data_binarized.RData", verbose = T)
 #load("data/adult_data_categ.RData", verbose = T)
@@ -23,39 +26,72 @@ cont <- c("age","fnlwgt","education_num","capital_gain","capital_loss","hours_pe
 categ <- setdiff(names(adult.data), cont)
 categ <- categ[-length(categ)] # Remove the label "y"!
 
-adult.data.onehot <- make.data.for.ANN(adult.data, cont)
+############### Do correct post-processing of the data. We do not need the "usual" labels y when building the VAE. 
+adult.data.onehot <- data.frame(adult.data) # make a copy of the dataframe for one hot encoding in ANN.
+tracemem(adult.data) == tracemem(adult.data.onehot) # it is a deep copy.
+data.table::address(adult.data)
+data.table::address(adult.data.onehot)
+# The memory addresses are different. 
 
-# Make train and test data.
-train_and_test_data <- make.train.and.test(data = adult.data.onehot) # The function returns two matrices (x) and two vectors (y). 
-# In addition, it returns two dataframes that are the original dataframe split into train and test (containing y's and x's).
-summary(train_and_test_data) # Returned list. 
-x_train <- train_and_test_data[[1]]
-# We do not really need the output variable y when building a VAE.
-x_test <- train_and_test_data[[3]]
-train_indices <- train_and_test_data[[5]]
+# Make the design matrix for the DNN.
+adult.data.onehot <- make.data.for.ANN(adult.data.onehot, cont) 
 
-# Normalize the data AFTER splitting to avoid data leakage!
-x_train.normalization <- normalize.data(data = x_train, continuous_vars = cont, standardscaler = T) # returns list with data, mins and maxs.
-x_train <- x_train.normalization[[1]] # we are only interested in the data for now. 
+#normalized <- normalize.data(data = adult.data.onehot, continuous_vars = cont, standardscaler = standardscaler)
+#adult.data.onehot <- normalized[[1]]
 
-# Make validation data also, in order to not validate using the test data. 
-# VALIDATION ER IKKE NØDVENDIG HVIS JEG ØNSKER Å SAMPLE FRA PRIOR VED GENERERING!
-sample.size.valid <- floor(nrow(x_test) * 1/3)
-valid.indices <- sample(1:nrow(x_test), size = sample.size.valid)
-x_valid <- x_test[valid.indices, ]
-x_test <- x_test[-valid.indices, ]
+# Make train and test data for our model matrix adult.data.
+sample.size <- floor(nrow(adult.data.onehot) * 6/7)
+train.indices <- sample(1:nrow(adult.data.onehot), size = sample.size)
+train <- adult.data.onehot[train.indices, ]
+test <- adult.data.onehot[-train.indices, ]
 
-x_test.normalization <- normalize.data(data = x_test, continuous_vars = cont, standardscaler = T) # returns list with data, mins and maxs.
-x_test <- x_test.normalization[[1]] # we are only interested in the data for now. 
+# Scale training data. 
+train.normalization <- normalize.data(data = train, continuous_vars = cont, standardscaler = standardscaler) # returns list with data, mins and maxs.
+train <- train.normalization[[1]]
+m <- train.normalization[[2]]
+M <- train.normalization[[3]]
 
-x_valid.normalization <- normalize.data(data = x_valid, continuous_vars = cont, standardscaler = T) # returns list with data, mins and maxs.
-x_valid <- x_valid.normalization[[1]] # we are only interested in the data for now. 
+x_train <- train[,-which(names(train) == "y")]
+y_train <- train[, "y"] # Use this for visualization later only.
+
+# Make validation data also. THIS IS NOT NECESSARY WHEN FOR THE VAE, SINCE I WANT TO TRAIN IT ON ALL THE DATA. 
+# In cases where validation data is dropped I simply use the testing data as validation data when fitting the VAE.
+#sample.size.valid <- floor(nrow(test) * 1/3)
+#valid.indices <- sample(1:nrow(test), size = sample.size.valid)
+#valid <- test[valid.indices, ]
+#test <- test[-valid.indices, ]
+
+# Scaling according to the same values abtained when scaling the training data! This is very important in all applications for generalizability!!
+if (standardscaler){
+  # Centering and scaling according to scales and centers from training data. 
+  d_test <- scale(test[,cont], center = m, scale = M)
+  catego <- setdiff(names(test), cont)
+  test <- cbind(d_test, test[,catego])[,colnames(test)]
+  
+  #d_valid <- scale(valid[,cont], center = m, scale = M)
+  #catego <- setdiff(names(valid), cont)
+  #valid <- cbind(d_valid, valid[,catego])[,colnames(valid)]
+} else {
+  # min-max normalization according to mins and maxes from training data. 
+  for (j in 1:length(cont)){
+    cont_var <- cont[j]
+    test[,cont_var] <- (test[,cont_var]-m[j])/(M[j]-m[j])
+    #valid[,cont_var] <- (valid[,cont_var]-m[j])/(M[j]-m[j])
+  }
+}
+
+x_test <- test[,-which(names(test) == "y")]
+#y_test <- test[,"y"]
+
+#x_valid <- valid[,-which(names(valid) == "y")]
+#y_valid <- valid[,"y"]
 
 # Scale the adult data as well, such that we can compare the data sets after generation. 
-adult.data.normalization <- normalize.data(data = adult.data.onehot, continuous_vars = cont, standardscaler = T)
-adult.data.onehot <- adult.data.normalization[[1]]
+#adult.data.normalization <- normalize.data(data = adult.data.onehot, continuous_vars = cont, standardscaler = T)
+#adult.data.onehot <- adult.data.normalization[[1]]
 
 
+############################ Build the VAE. 
 # Build the VAE.
 latent_dim <- 8L # This sets the size of the latent representation (vector), 
 intermediate_dim <- 15L
@@ -164,45 +200,45 @@ history <- vae %>% fit(
   shuffle = T,
   epochs = 30,
   batch_size = 16,
-  validation_data = list(data.matrix(x_valid), data.matrix(x_valid)),
+  validation_data = list(data.matrix(x_test), data.matrix(x_test)), # We do not use validation sets now, use test as validation. 
   verbose = 1,
   callbacks = callbacks_list
 )
 
 plot(history)
 
-############################ Make some fake data!
+############################ Make some synthetic data!
 generation_method <- 1
 K <- 1e5L
-variational_parameters <- encoder %>% predict(data.matrix(x_test)) # Eller bruke treningsdataene her?
-v_means <- variational_parameters[[1]]
-v_log_vars <- variational_parameters[[2]] 
-v_zs <- variational_parameters[[3]]
 
-# Could generate data in two different ways now!
-# 1) Use the means and vars from the encoder to sample from MVN, then decode the data. Or simply sample from a standard normal?
-# 2) Use the z's: Sample from them, add some small noise to the samples, then decode the data. 
-
+# Could generate data in four different ways now. Test all of them below and add results to the report. 
 # Tried to match these numbers to the numbers used in the project report.
+# Here we generate samples in the latent space according to the given method. 
+# Then we decode the latent space samples below. 
 if (generation_method == 4){
   # Sample from prior p(z), N(0,1)
-  #mu <- colMeans(v_means)
-  #sigma <- diag(colMeans((exp(v_log_vars/2))^2))
-  #s <- mvrnorm(n = K, mu = mu, Sigma = sigma) 
-  s <- mvrnorm(n = K, mu = rep(0,ncol(v_means)), Sigma = diag(rep(1,ncol(v_means)))) # Try to sample from the prior we have put on the latent variables, aka N(0,1).
-  # This looks like it gives good results as well! Similar to the one with noise below!
+  s <- mvrnorm(n = K, mu = rep(0,latent_dim), Sigma = diag(rep(1,latent_dim)))
+  
 } else if (generation_method == 3){
   # Sample from the z's and add some uniform noise. 
-  r <- slice_sample(as.data.frame(v_zs), n = K, replace = T) # Sample K rows from the z's. 
+  z_s <- (encoder %>% predict(data.matrix(x_train)))[[3]] # IN THE REPORT I STATE THAT THE test-data IS RUN THROUGH. I NEED TO CHANGE THE TEXT THEN!
+  r <- slice_sample(as.data.frame(z_s), n = K, replace = T) # Sample K rows from the z's. 
   s <- jitter(data.matrix(r), amount = 0) # Add some uniform noise to r.
+  
 } else if (generation_method == 2){
   # Sample K/nrow(x_train) times from latent space PER training data point. 
+  # Her gir det ikke helt mening å generere noe annet enn n*nrow(x_train) antall samples, for at det skal bli balansert. 
+  # Det samme gjelder vel egentlig i metoden nedenfor?!
+  
    
 } else if (generation_method == 1){
   # Run entire training data through entire VAE K/nrow(x_train) times.
   # Generation method 4 and 3 should be equivalent in theory, but might be different in practice because of seed-problems.
   # They should be similar because sigma and mu should be deterministically given per data point (when running x_train through the encoder).
-  
+  data_through <- do.call("rbind", replicate(floor(K/nrow(x_train)), x_train, simplify = FALSE)) # Replicate training set whole times. 
+  data_through <- rbind(data_through, slice_sample(x_train, n = K %% nrow(x_train), replace = F)) # Sample the rest without replacement from x_train.
+  # Data set to run through model is now constructed — based on replicating the training data "enough" times. 
+  s <- (encoder %>% predict(data.matrix(data_through)))[[3]]
 }
 
 # if (generation_method == 1){
@@ -238,54 +274,108 @@ head(decoded_data_rand)
 #decoded_data_rand <- de.normalize.data(decoded_data_rand, cont, x_test.normalization$mins, x_test.normalization$maxs)
 
 # Revert the one hot encoding
-adult.data.reverse.onehot <- reverse.onehot.encoding(adult.data.onehot, cont, categ, has.label = T)
 decoded_data_rand <- reverse.onehot.encoding(decoded_data_rand, cont, categ, has.label = F)
 
-summary(adult.data.reverse.onehot)
+# De-normalize the generated data, such that it is on the same scale as the adult data. 
+if (standardscaler){
+  data_orig2 <- t(apply(decoded_data_rand[,cont], 1, function(r)r*M + m))
+  data_orig2 <- cbind(data_orig2, as.data.frame(decoded_data_rand[,-which(names(decoded_data_rand) %in% cont)]))
+  decoded_data_rand <- data_orig2  
+} else {
+  # Har ikke testet denne på lenge! OBS!
+  decoded_data_rand <- de.normalize.data(decoded_data_rand, cont, m, M)
+}
+
+
+summary(adult.data)
 summary(decoded_data_rand)
 
-summary(adult.data.reverse.onehot[, cont])
+# Round these — check later if this is correct but it seems correct to me!
+decoded_data_rand[,cont] <- round(decoded_data_rand[,cont]) # Round all the numerical variable predictions to the closest integer. 
+head(decoded_data_rand)
+
+summary(adult.data[, cont])
 summary(decoded_data_rand[, cont])
+
+cap_gain_real <- (adult.data %>% dplyr::select(capital_gain))[[1]]
+cap_gain_gen <- (decoded_data_rand %>% dplyr::select(capital_gain))[[1]]
+length(cap_gain_real[cap_gain_real != 0])/length(cap_gain_real)
+length(cap_gain_gen[cap_gain_gen != 0])/length(cap_gain_gen) # Almost all data points are != 0 from VAE!
 
 cap_loss_real <- (adult.data %>% dplyr::select(capital_loss))[[1]]
 cap_loss_gen <- (decoded_data_rand %>% dplyr::select(capital_loss))[[1]]
-length(cap_loss_real[cap_loss_real != 0]) # Same as for cap_gain!
-length(cap_loss_real)
-length(cap_loss_gen[cap_loss_gen != 0]) # Same as for cap_gain!
-length(cap_loss_gen) # Almost all data points are != 0 from VAE!
+length(cap_loss_real[cap_loss_real != 0])/length(cap_loss_real)
+length(cap_loss_gen[cap_loss_gen != 0])/length(cap_loss_gen) # Almost all data points are != 0 from VAE!
 
-table(adult.data.reverse.onehot$workclass)/sum(table(adult.data.reverse.onehot$workclass))
+
+table(adult.data$workclass)/sum(table(adult.data$workclass))
 table(decoded_data_rand$workclass)/sum(table(decoded_data_rand$workclass))
 
-table(adult.data.reverse.onehot$marital_status)/sum(table(adult.data.reverse.onehot$marital_status))
+table(adult.data$marital_status)/sum(table(adult.data$marital_status))
 table(decoded_data_rand$marital_status)/sum(table(decoded_data_rand$marital_status))
 
-table(adult.data.reverse.onehot$occupation)/sum(table(adult.data.reverse.onehot$occupation))
+table(adult.data$occupation)/sum(table(adult.data$occupation))
 table(decoded_data_rand$occupation)/sum(table(decoded_data_rand$occupation))
 
-table(adult.data.reverse.onehot$relationship)/sum(table(adult.data.reverse.onehot$relationship))
+table(adult.data$relationship)/sum(table(adult.data$relationship))
 table(decoded_data_rand$relationship)/sum(table(decoded_data_rand$relationship))
 
-table(adult.data.reverse.onehot$race)/sum(table(adult.data.reverse.onehot$race))
+table(adult.data$race)/sum(table(adult.data$race))
 table(decoded_data_rand$race)/sum(table(decoded_data_rand$race))
 
-table(adult.data.reverse.onehot$sex)/sum(table(adult.data.reverse.onehot$sex))
+table(adult.data$sex)/sum(table(adult.data$sex))
 table(decoded_data_rand$sex)/sum(table(decoded_data_rand$sex))
 
-table(adult.data.reverse.onehot$native_country)/sum(table(adult.data.reverse.onehot$native_country))
+table(adult.data$native_country)/sum(table(adult.data$native_country))
 table(decoded_data_rand$native_country)/sum(table(decoded_data_rand$native_country))
 
 # Could do things like this also! (compare tables of factors to each other)
-table(adult.data.reverse.onehot[,c("sex")], adult.data.reverse.onehot[,c("native_country")])/sum(table(adult.data.reverse.onehot[,c("sex")], adult.data.reverse.onehot[,c("native_country")]))
+table(adult.data[,c("sex")], adult.data[,c("native_country")])/sum(table(adult.data[,c("sex")], adult.data[,c("native_country")]))
 table(decoded_data_rand[,c("sex")], decoded_data_rand[,c("native_country")])/sum(table(decoded_data_rand[,c("sex")], decoded_data_rand[,c("native_country")]))
+
+cont.summary <- function(data){
+  summary <- data %>%
+    dplyr::select(c("sex",cont)) %>%
+    tidyr::pivot_longer(-sex) %>%
+    group_by(` ` = name) %>% 
+    summarize(Min. = min(value),
+              "25%" = quantile(value, p = 0.25),
+              Median = median(value), 
+              Mean = mean(value), 
+              "75%" = quantile(value, p = 0.75),
+              Max. = max(value))
+  summary
+}
+
+knitr::kable(cont.summary(adult.data), format = "latex", linesep = "", digits = 1, booktabs = T) %>% print()
+knitr::kable(cont.summary(decoded_data_rand), format = "latex", linesep = "", digits = 1, booktabs = T) %>% print()
+
+make_ggplot_for_categ <- function(data, filename, save){
+  data.categ <- data[,categ]
+  data.categ.wide <- data.categ %>% tidyr::pivot_longer(categ) %>% count(name, value) %>% mutate(ratio = round(n/nrow(data.categ), 3))
+  #adult.data.categ.wide <- adult.data.categ %>% tidyr::pivot_longer(categ)
+  #adult.data.categ <- apply(adult.data.categ,FUN = function(x){table(x)/sum(table(x))}, MARGIN = 2)
+  categ_plot <- data.categ.wide %>% ggplot(aes(x = name, y = ratio, fill = value)) +
+    geom_col(position = "stack")+#), show.legend = F) + # For kategorisk data må legend fjernes
+    geom_text(aes(label = ratio), position = position_stack(vjust = 0.5)) +
+    theme_minimal() 
+  #geom_text(nudge_y = 1)
+  if (save) ggsave(paste0("plots/",filename,".pdf"), width = 9, height = 5)
+  return(categ_plot)
+}
+
+# Vanskeligere å lage disse plottene for den kategoriske dataen!!
+make_ggplot_for_categ(adult.data, "ikkenoeenda", F)
+make_ggplot_for_categ(decoded_data_rand, "ja", F) # Legg inn dette senere!
+
 
 #### For illustration purposes we make a scatter plot of the latent space (when 2 dimensional).
 library(ggplot2)
 library(dplyr)
 latent_train_data <- (encoder %>% predict(data.matrix(x_train)))[[3]] # We only need the latent values for this. 
 if (latent_dim == 2){
-  df <- data.frame(cbind(latent_train_data, train_and_test_data[[2]]))
-  df$X3 <- as.factor(df$X3)
+  df <- data.frame(cbind(latent_train_data, y_train))
+  df$y_train<- as.factor(df$y_train)
   colnames(df) <- c("Z1", "Z2", "Label")
   plt <- tibble(df) %>% 
     ggplot(aes(x = Z1, y = Z2, color = Label)) +
@@ -299,8 +389,8 @@ if (latent_dim == 2){
   pca <- princomp(latent_train_data)
   print(summary(pca))
   scores <- pca$scores
-  df <- data.frame(cbind(scores[,1], scores[,2], train_and_test_data[[2]]))
-  df$X3 <- as.factor(df$X3)
+  df <- data.frame(cbind(scores[,1], scores[,2], y_train))
+  df$y_train<- as.factor(df$y_train)
   colnames(df) <- c("Z1", "Z2", "Label")
   plt <- tibble(df) %>% 
     ggplot(aes(x = Z1, y = Z2, color = Label)) +
@@ -347,65 +437,9 @@ sd((df %>% filter(Label == 1) %>% dplyr::select(Z2))$Z2)
 sd((df %>% filter(Label == 0) %>% dplyr::select(Z1))$Z1)
 sd((df %>% filter(Label == 0) %>% dplyr::select(Z2))$Z2)
 
-###################################### Center and scale the datasets "back" to the original scales. 
-
-# De-normalize the normalized (min-max data).
-#adult.data.reverse.onehot <- de.normalize.data(adult.data.reverse.onehot, cont, adult.data.normalization$mins, adult.data.normalization$maxs)
-#decoded_data_rand <- de.normalize.data(decoded_data_rand, cont, x_test.normalization$mins, x_test.normalization$maxs)
-
-# This can be done easily for the adult data, since this was centered and scaled earlier. 
-data_orig <- t(apply(adult.data.reverse.onehot[,cont], 1, function(r)r*adult.data.normalization$sds + adult.data.normalization$means))
-data_orig <- cbind(data_orig, as.data.frame(adult.data.reverse.onehot[,-which(names(adult.data) %in% c(cont,"y"))]))
-adult.data.reverse.onehot <- data_orig
-
-# There is no clear way of doing it for the generated/decoded data, but we will use the center and the scale of the test-data here. 
-data_orig2 <- t(apply(decoded_data_rand[,cont], 1, function(r)r*x_test.normalization$sds + x_test.normalization$means))
-data_orig2 <- cbind(data_orig2, as.data.frame(decoded_data_rand[,-which(names(decoded_data_rand) %in% cont)]))
-decoded_data_rand <- data_orig2
-
-summary(adult.data.reverse.onehot[, cont])
-summary(decoded_data_rand[, cont])
-
-# Make scatter plots (qq-plots between the two data sets). For numerical features. 
-# This only works if both data sets have the same length. 
-plot(sort(adult.data.reverse.onehot$age), sort(sample(decoded_data_rand$age, size = nrow(adult.data.reverse.onehot))))
-plot(sort(adult.data.reverse.onehot$education_num), sort(sample(decoded_data_rand$education_num, size = nrow(adult.data.reverse.onehot))))
-
-## Check correlations between the numerical features. 
-cor(adult.data.reverse.onehot[,cont], slice_sample(decoded_data_rand[,cont], n = nrow(adult.data.reverse.onehot))) # Check between the two data sets. 
-cor(adult.data.reverse.onehot[,cont], adult.data.reverse.onehot[,cont]) # Check within each data set and compare the two.
-cor(decoded_data_rand[,cont], decoded_data_rand[,cont]) # Check within each data set and compare the two.
-
-cap_loss_real <- (adult.data %>% dplyr::select(capital_loss))[[1]]
-cap_loss_gen <- (decoded_data_rand %>% dplyr::select(capital_loss))[[1]]
-length(cap_loss_real[cap_loss_real != 0]) # Same as for cap_gain!
-length(cap_loss_real)
-length(cap_loss_gen[cap_loss_gen != 0]) # Same as for cap_gain!
-length(cap_loss_gen) # Almost all data points are != 0 from VAE!
-
-table(adult.data.reverse.onehot$workclass)/sum(table(adult.data.reverse.onehot$workclass))
-table(decoded_data_rand$workclass)/sum(table(decoded_data_rand$workclass))
-
-table(adult.data.reverse.onehot$marital_status)/sum(table(adult.data.reverse.onehot$marital_status))
-table(decoded_data_rand$marital_status)/sum(table(decoded_data_rand$marital_status))
-
-table(adult.data.reverse.onehot$occupation)/sum(table(adult.data.reverse.onehot$occupation))
-table(decoded_data_rand$occupation)/sum(table(decoded_data_rand$occupation))
-
-table(adult.data.reverse.onehot$relationship)/sum(table(adult.data.reverse.onehot$relationship))
-table(decoded_data_rand$relationship)/sum(table(decoded_data_rand$relationship))
-
-table(adult.data.reverse.onehot$race)/sum(table(adult.data.reverse.onehot$race))
-table(decoded_data_rand$race)/sum(table(decoded_data_rand$race))
-
-table(adult.data.reverse.onehot$sex)/sum(table(adult.data.reverse.onehot$sex))
-table(decoded_data_rand$sex)/sum(table(decoded_data_rand$sex))
-
-table(adult.data.reverse.onehot$native_country)/sum(table(adult.data.reverse.onehot$native_country))
-table(decoded_data_rand$native_country)/sum(table(decoded_data_rand$native_country))
 
 ###################################### Try "deployment phase" in Olsen 2021 (page 10 + 11).
-# Forstår ikke helt hva de gjør!? Prøv å lese dette igjen senere!
+# Dette skal tilsvare min generation_method = 2 oppe!! (det var tanken).
 K <- 1
 variational_parameters <- encoder %>% predict(data.matrix(x_test[1,])) # Eller bruke treningsdataene her?
 v_means <- variational_parameters[[1]]
@@ -425,5 +459,5 @@ colnames(dec_test) <- colnames(x_test)
 #decoded_data_rand <- de.normalize.data(decoded_data_rand, cont, x_test.normalization$mins, x_test.normalization$maxs)
 
 # Revert the one hot encoding
-adult.data.reverse.onehot <- reverse.onehot.encoding(adult.data.onehot, cont, categ, has.label = T)
+#adult.data.reverse.onehot <- reverse.onehot.encoding(adult.data.onehot, cont, categ, has.label = T)
 decoded_data_rand <- reverse.onehot.encoding(decoded_data_rand, cont, categ, has.label = F)

@@ -44,7 +44,7 @@ most_frequent <- function(vec){
 
 
 binarize <- function(vec){
-  vec[which(vec != most_frequent(vec))] <- "Other"
+  vec[which(vec != most_frequent(vec))] <- " Other"
   vec <- as.factor(vec)
   vec
 }

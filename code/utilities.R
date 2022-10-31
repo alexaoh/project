@@ -6,14 +6,14 @@ take.arguments <- function(){
   if (length(args) != 5){
     print("Default arguments are used")
             # method, length(H), K, generate (TRUE) or load (FALSE), binarized data (TRUE) or not (FALSE)
-    args <- c("randomForest",100,10000,FALSE,TRUE)
+    args <- c("ANN",100,10000,FALSE,TRUE)
   } 
   return(args)
 }
 
 
 ########################## Data processing tools. 
-normalize <- function(x, standardscaler){
+normalize <- function(x){
   # Normalize the vector x. This is not normalization but min-max scaling. 
   return((x- min(x))/(max(x)-min(x)))  
 }
@@ -27,8 +27,8 @@ normalize.data <- function(data, continuous_vars, standardscaler){
   # Normalizes our data and returns the mins and maxs of all continuous variables, such that we can de-normalize later. 
   if (standardscaler){
     d <- scale(data[,cont])
-    cat <- setdiff(names(data), cont)
-    full_data <- cbind(d, data[,cat])[,colnames(data)]
+    categ <- setdiff(names(data), cont)
+    full_data <- cbind(d, data[,categ])[,colnames(data)]
     return(list("d" = full_data, "means" = attr(d, "scaled:center"), "sds" = attr(d, "scaled:scale")))
   } else {
     mins <- c()

@@ -3,6 +3,9 @@
 
 library(rpart)
 library(dplyr)
+library(ggplot2)
+
+setwd("/home/ajo/gitRepos/project")
 
 args <- commandArgs(trailingOnly = T)
 
@@ -17,13 +20,15 @@ if (args[1] == "bin"){
 }
 
 cont <- c("age","fnlwgt","education_num","capital_gain","capital_loss","hours_per_week")
+categ <- setdiff(names(adult.data), cont)
+categ <- categ[-length(categ)] # Remove the label "y"!
 
 # I build new trees, such that I can build a first tree for sex ~ age. 
 data_min_response <- adult.data[,-which(names(adult.data) == "y")] # All covariates (removed the response from the data frame).
 
 fixed_features <- c("age") # Now we do not have any fixed values but I keep this here for easier implementation. 
 mut_features <- base::setdiff(colnames(data_min_response), fixed_features)[c(8,1,2,3,4,5,6,7,9,10,11,12)] 
-# We rearrane the "mut_features", such that sex is the first on (such that we get age, sex, etc in the list of features).
+# We rearrange the "mut_features", such that sex is the first on (such that we get age, sex, etc in the list of features).
 mut_datatypes <- sapply(data_min_response[mut_features], class)
 u <- length(fixed_features) # Number of fixed features. 
 q <- length(mut_features) # Number of mutable features. 
@@ -154,6 +159,10 @@ table(adult.data$native_country)/sum(table(adult.data$native_country))
 summary(D2 %>% dplyr::select(cont))
 summary(adult.data %>% dplyr::select(cont))
 
+# Could make tables like this as well perhaps. 
+table(adult.data[,c("sex")], adult.data[,c("native_country")])/sum(table(adult.data[,c("sex")], adult.data[,c("native_country")]))
+table(D2[,c("sex")], D2[,c("native_country")])/sum(table(D2[,c("sex")], D2[,c("native_country")]))
+
 cont.summary <- function(data){
   summary <- data %>%
     dplyr::select(c("sex",cont)) %>%
@@ -168,8 +177,8 @@ cont.summary <- function(data){
   summary
 }
 
-knitr::kable(cont.summary(adult.data), format = "latex", linesep = "", digits = 2, booktabs = T) %>% print()
-knitr::kable(cont.summary(D2), format = "latex", linesep = "", digits = 2, booktabs = T) %>% print()
+knitr::kable(cont.summary(adult.data), format = "latex", linesep = "", digits = 1, booktabs = T) %>% print()
+knitr::kable(cont.summary(D2), format = "latex", linesep = "", digits = 1, booktabs = T) %>% print()
 
 # Looking at bit more closely at come of the continuous features.
 cap_gain_OG <- (adult.data %>% dplyr::select(capital_gain))[[1]]
@@ -197,10 +206,10 @@ make_ggplot_for_categ <- function(data, filename, save){
     geom_text(aes(label = ratio), position = position_stack(vjust = 0.5)) +
     theme_minimal() 
     #geom_text(nudge_y = 1)
-  categ_plot
-  if (save) ggsave(paste0("plots/",filename,".pdf"), width = 7, height = 5)
+  if (save) ggsave(paste0("plots/",filename,".pdf"), width = 9, height = 5)
+  return(categ_plot)
 }
 
 # Vanskeligere å lage disse plottene for den kategoriske dataen!!
-make_ggplot_for_categ(adult.data, "adult_data_categ_ratios_bin_data", T)
-make_ggplot_for_categ(D2, "generated_exp1_categ_ratios_bin_data", T)
+make_ggplot_for_categ(adult.data, "adult_data_categ_ratios_bin_data", F)
+make_ggplot_for_categ(D2, "generated_exp1_categ_ratios_bin_data", F)

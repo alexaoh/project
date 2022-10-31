@@ -1,11 +1,4 @@
-# Writing the outline for algorithm 1 in MCCE by Aas et al.
-
-# Next need to add some data to test this out. 
-# Adult data set: 
-# https://archive.ics.uci.edu/ml/datasets/Adult
-
-# Give me some credit data: 
-# https://www.kaggle.com/datasets/brycecf/give-me-some-credit-dataset
+# Experiment 3: Reproduce results from MCCE with a ANN.
 
 rm(list = ls())  # make sure to remove previously loaded variables into the Session.
 
@@ -17,7 +10,6 @@ library(keras) # for deep learning models.
 library(pROC) # For ROC curve.
 library(hmeasure) # For AUC (I am testing this for comparison to pROC).
 library(caret) # For confusion matrix.
-library(ranger) # For implementing a random forest classifier.
 
 # Source some of the needed code. 
 source("code/utilities.R")
@@ -29,10 +21,9 @@ for (i in CLI.args){
   print(i)
 }
 
-# Just for testing right now, should be removed later!
-#CLI.args <- c("logreg",100,10000, FALSE, TRUE)
+# Parameter for choosing standardscaler or not. 
+standardscaler = T
 
-########################################### Build ML models for classification: which individuals obtain an income more than 50k yearly?
 set.seed(42) # Set seed to begin with!
 
 # Load the data we want first. Loading and cleaning the original data is done in separate files. 
@@ -44,87 +35,115 @@ if (CLI.args[5]){
   stop("Please supply either T (binarized data) of F (categorical data) as the fit CLI argument.")
 }
 
-# List of continuous variables.
 cont <- c("age","fnlwgt","education_num","capital_gain","capital_loss","hours_per_week")
+# List of categorical variables (used to reverse onehot encode later!)
+categ <- setdiff(names(adult.data), cont)
+categ <- categ[-length(categ)] # Remove the label "y"!
 
-if (CLI.args[1] == "ANN"){
-  adult.data.onehot <- data.frame(adult.data) # make a copy of the dataframe for one hot encoding in ANN.
-  tracemem(adult.data) == tracemem(adult.data.onehot) # it is a deep copy.
-  data.table::address(adult.data)
-  data.table::address(adult.data.onehot)
-  # The memory addresses are different. 
+############ We do not care about the first CLI-argument (the model).
+############ We simply (for now) only implement the ANN, for less clutter :)
+adult.data.onehot <- data.frame(adult.data) # make a copy of the dataframe for one hot encoding in ANN.
+tracemem(adult.data) == tracemem(adult.data.onehot) # it is a deep copy.
+data.table::address(adult.data)
+data.table::address(adult.data.onehot)
+# The memory addresses are different. 
 
-  # The data is normalized (for performance) when we want to use the ANN as a predictive model. 
-  adult.data.normalized <- normalize.data(data = adult.data.onehot, continuous_vars = cont, standardscaler = T) 
-  # returns list with data, mins and maxs or data, means and sds (depending on standardscaler or not).
-  
-  #summary(adult.data.normalized)
-  adult.data.onehot <- adult.data.normalized[[1]] # We are only interested in the data for now.
-  # adult.data <- adult.data.normalized[[1]] # Could normalize the "normal" adult.data as well, not sure if this is needed at this point. 
+# Make the design matrix for the DNN.
+adult.data.onehot <- make.data.for.ANN(adult.data.onehot, cont) 
 
-  # Make the design matrix for the DNN.
-  adult.data.onehot <- make.data.for.ANN(adult.data.onehot, cont) # Compare this with the model.matrix approach from below, if time. 
+#normalized <- normalize.data(data = adult.data.onehot, continuous_vars = cont, standardscaler = standardscaler)
+#adult.data.onehot <- normalized[[1]]
+
+# Make train and test data for our model matrix adult.data.
+sample.size <- floor(nrow(adult.data.onehot) * 2/3)
+train.indices <- sample(1:nrow(adult.data.onehot), size = sample.size)
+train <- adult.data.onehot[train.indices, ]
+test <- adult.data.onehot[-train.indices, ]
+
+# Scale training data. 
+train.normalization <- normalize.data(data = train, continuous_vars = cont, standardscaler = standardscaler) # returns list with data, mins and maxs.
+train <- train.normalization[[1]]
+m <- train.normalization[[2]]
+M <- train.normalization[[3]]
+
+x_train <- train[,-which(names(train) == "y")]
+y_train <- train[, "y"]
+
+# Make validation data also.
+sample.size.valid <- floor(nrow(test) * 1/3)
+valid.indices <- sample(1:nrow(test), size = sample.size.valid)
+valid <- test[valid.indices, ]
+test <- test[-valid.indices, ]
+
+# Scaling according to the same values obtained when scaling the training data! This is very important in all applications for generalizability!!
+if (standardscaler){
+  # Centering and scaling according to scales and centers from training data. 
+  d_test <- scale(test[,cont], center = m, scale = M)
+  catego <- setdiff(names(test), cont)
+  test <- cbind(d_test, test[,catego])[,colnames(test)]
   
-  # One-hot encode the data if we are fitting an ANN. Otherwise we simply keep the same data as earlier. 
-  # adult.data.onehot <- as.data.frame(model.matrix(~.,data = adult.data.onehot)) # We keep the intercept in the encoding.
-  # Compare this onehot encoding with the one from caret::dummyVars if I have time. 
-  
-  # Make train and test data for our model matrix adult.data.
-  train_and_test_data <- make.train.and.test(data = adult.data.onehot) # The function returns two matrices (x) and two vectors (y). 
-  # In addition, it returns the indices of the data set used in the training data. 
-  summary(train_and_test_data) # Returned list. 
-  x_train <- train_and_test_data[[1]]
-  y_train <- train_and_test_data[[2]]
-  x_test <- train_and_test_data[[3]]
-  y_test <- train_and_test_data[[4]]
-  # The train indices are used to construct H later. 
-  train_indices <- train_and_test_data[[5]]
+  d_valid <- scale(valid[,cont], center = m, scale = M)
+  catego <- setdiff(names(valid), cont)
+  valid <- cbind(d_valid, valid[,catego])[,colnames(valid)]
 } else {
-  # Make train and test data for our adult.data.
-  train_and_test_data <- make.train.and.test(data = adult.data) 
-  summary(train_and_test_data) # Returned list. 
-  x_train <- train_and_test_data[[1]]
-  y_train <- train_and_test_data[[2]]
-  x_test <- train_and_test_data[[3]]
-  y_test <- train_and_test_data[[4]]
-  train_indices <- train_and_test_data[[5]]
-}
-
-if (CLI.args[1] == "ANN"){
-  ANN <- fit.ANN(data.matrix(x_train), y_train, data.matrix(x_test), y_test)
-} else if (CLI.args[1] == "logreg"){
-  logreg <- fit.logreg(x_train, y_train, x_test, y_test)
-} else if (CLI.args[1] == "randomForest"){
-  random.forest <- fit.random.forest(x_train, y_train, x_test, y_test)
-} else {
-  stop("We have only implemented three prediction models: 'ANN', 'logreg' or 'randomForest'.")
-}
-
-# This is used to return the predicted probabilities according to the model we want to use (for later).
-prediction_model <- function(x_test,method){
-  # This returns the predicted probabilities of class 1 (>= 50k per year).
-  # We need to make sure that we feed the ANN with the proper design/model matrix for it to work!
-  if (method == "logreg"){
-    return(predict(logreg, data.frame(x_test), type = "response")) 
-  } else if (method == "ANN"){
-    return(as.numeric(ANN %>% predict(data.matrix(x_test))))
-  } else if (method == "randomForest"){
-    return(predict(random.forest, x_test)$predictions[,2]) 
-  } else { # This 'stop' is strictly not necessary since I checked this earlier in the compilation, but it is ok to leave here. 
-    stop("Methods 'logreg', 'ANN' and 'randomForest' are the only implemented thus far")
+  # min-max normalization according to mins and maxes from training data. 
+  for (j in 1:length(cont)){
+    cont_var <- cont[j]
+    test[,cont_var] <- (test[,cont_var]-m[j])/(M[j]-m[j])
+    valid[,cont_var] <- (valid[,cont_var]-m[j])/(M[j]-m[j])
   }
 }
 
-# This is not possible anymore, since I am not fitting all of them at once. 
-# Could easily be re-implemented though. The results are still very similar in the three prediction
-# models, which is not really a main point in this project.
-# Predictions from each of the models (just for show).
-# d <- data.frame("logreg" = prediction_model(x_test, method = "logreg"), 
-#                 "ANN" = prediction_model(data.matrix(x_test), method = "ANN"))
-# head(d, 20) # The predictions look relatively similar with the two methods. 
-# tail(d, 20) # There are a few differences, but not many. 
+x_test <- test[,-which(names(test) == "y")]
+y_test <- test[,"y"]
 
-############################################ This is where the generation algorithm begins. 
+x_valid <- valid[,-which(names(valid) == "y")]
+y_valid <- valid[,"y"]
+
+
+##################### Step 1: Fit the ANN.
+ANN <- keras_model_sequential() %>%
+  layer_dense(units = 18, activation = 'relu', input_shape = c(ncol(x_train))) %>%
+  layer_dense(units = 9, activation = 'relu') %>% 
+  layer_dense(units = 3, activation = 'relu') %>% 
+  layer_dense(units = 1, activation = 'sigmoid')
+
+# compile (define loss and optimizer)
+ANN %>% compile(loss = 'binary_crossentropy',
+                optimizer = optimizer_adam(), # Could try other optimizers also.  #learning_rate = 0.002
+                metrics = c('accuracy'))
+
+# train (fit)
+history <- ANN %>% fit(x = data.matrix(x_train), 
+                       y = y_train, 
+                       epochs = 30, 
+                       batch_size = 1024, 
+                       validation_data = list(data.matrix(x_valid), y_valid)
+                       )
+
+# plot
+plot(history)
+
+print(summary(ANN))
+
+# evaluate on training data. 
+ANN %>% evaluate(data.matrix(x_train), y_train)
+
+# evaluate on test data. 
+ANN %>% evaluate(data.matrix(x_test), y_test)
+
+y_pred <- ANN %>% predict(data.matrix(x_test)) #%>% `>=`(0.5) #%>% k_cast("int32")
+print(confusionMatrix(factor(as.numeric(y_pred %>% `>=`(0.5))), factor(y_test)))
+print(roc(response = y_test, predictor = as.numeric(y_pred), plot = T))
+results <- HMeasure(y_test,as.numeric(y_pred),threshold=0.5)
+print(results$metrics$AUC)
+######################### Step 1 of predictor fitting is complete!!
+
+
+
+
+#########################Step 2: Use MCCE to generate counterfactuals for 100 randomly sample individuals in the test data.
+# First we need to build the trees and build the latent distribution model. 
 data_min_response <- adult.data[,-which(names(adult.data) == "y")] # All covariates (removed the response from the data frame).
 
 fixed_features <- c("age", "sex") # Names of fixed features from the data. 
@@ -147,12 +166,12 @@ for (i in 1:q){
   if (mut_datatypes[[i]] == "factor"){ 
     #T_j[[i]] <- tree(tot_form, data = adult.data, control = tree.control(nobs = nrow(adult.data), mincut = 80, minsize = 160), split = "gini", x = T)
     #T_j[[i]] <- rpart(tot_form, data = adult.data, method = "class", control = rpart.control(minsplit = 2, minbucket = 1)) 
-    T_j[[i]] <- rpart(tot_form, data = adult.data, method = "class", control = rpart.control(minbucket = 5, cp = 1e-4)) 
+    T_j[[i]] <- rpart(tot_form, data = adult.data, method = "class", control = rpart.control(minbucket = 5, cp = 1e-6)) 
     # Method = "class": Uses Gini index, I believe. Check the docs again. 
   } else if (mut_datatypes[[i]] == "integer" || mut_datatypes[[i]] == "numeric"){ # mean squared error.
     #T_j[[i]] <- tree(tot_form, data = adult.data, control = tree.control(nobs = nrow(adult.data), mincut = 5, minsize = 10), split = "deviance", x = T)
     #T_j[[i]] <- rpart(tot_form, data = adult.data, method = "anova", control = rpart.control(minsplit = 2, minbucket = 1)) 
-    T_j[[i]] <- rpart(tot_form, data = adult.data, method = "anova", control = rpart.control(minbucket = 5, cp = 1e-8)) 
+    T_j[[i]] <- rpart(tot_form, data = adult.data, method = "anova", control = rpart.control(minbucket = 5, cp = 1e-10)) 
     # Method = "anova": SST-(SSL+SSR). Check out the docs. This should (hopefully) be the same as Mean Squared Error. 
   } else { 
     stop("Error: Datatypes need to be either factor or integer/numeric.") # We need to use "numeric" if we have normalized the data!
@@ -178,18 +197,18 @@ generate <- function(h, K){ # K = 10000 is used in the article for the experimen
   # Instantiate entire D_h-matrix for all features. 
   D_h <- as.data.frame(matrix(data = rep(NA, K*p), nrow = K, ncol = p))
   colnames(D_h) <- c(fixed_features, mut_features)
-
+  
   # Fill the matrix D_h with copies of the vectors of fixed features. 
   # All rows should have the same value in all the fixed features. 
   D_h[, fixed_features] <- h %>% dplyr::select(all_of(fixed_features))
   D_h[, mut_features] <- h %>% dplyr::select(all_of(mut_features)) # Add this to get the correct datatypes (these are not used when predicting though!)
-
+  
   # Now setup of D_h is complete. We move on to the second part, where we append columns to D_h. 
   
   for (j in 1:q){
     feature_regressed <- mut_features[j]
     feature_regressed_dtype <- mut_datatypes[[j]]
-
+    
     d <- rep(NA, K) # Empty vector of length K. 
     # Will be inserted into D_h later (could col-bind also, but chose to instantiate entire D_h from the beginning).
     
@@ -219,42 +238,19 @@ generate <- function(h, K){ # K = 10000 is used in the article for the experimen
   # We also rearrange the columns to match the column orders in the original data. 
   # This is an implementation detail that is done to be able to easier calculated sparsity etc in the pre-processing. 
 }
- 
-# Points we want to explain. This is the list of factuals. 
-# Here we say that we want to explain predictions that are predicted as 0 (less than 50k a year). We want to find out what we need to change to change
-# this prediction into 1. This is done in the post-processing after generating all the possible counterfactuals. According to the experiments in the article
-# we only generate one counterfactual per factual, for the first 100 undesirable observations we want to explain.
-if (CLI.args[1] %in% c("ANN", "logreg", "randomForest")){
-  preds <- prediction_model(x_test, method = CLI.args[1]) 
-} else { # Perhaps we need to add a special if else for ANN here! (because of the model matrix being different!)
-  stop("Please supply either 'ANN', 'logreg' or 'randomForest' as the first CLI argument.")
-}
 
-# For testing (load the predictions from Ranger):
-# data.table::fwrite(list(preds), file = "ranger_preds.csv")
-# stop("Stop the code after saving the predictions!")
-# preds <- read.csv("ranger_preds.csv", header = F)
-# print(class(preds))
-# preds <- as.numeric(preds[[1]])
+# Make predictions from ANN on all of the the test data.
+preds <- as.numeric(ANN %>% predict(data.matrix(x_test)))
 
-#preds_sorted <- sort(preds, decreasing = F, index.return = T) # Vil tro det kanskje ikke er dette de er på jakt etter!?
-#preds_sorted_values <- preds_sorted$x[1:10] # Skal egentlig ha de 100 første! Gjør dette for testing nå!
-#preds_sorted_indices <- preds_sorted$ix[1:10]
-#new_predicted_data <- cbind(test[preds_sorted_indices,colnames(adult.data)], "y_pred" = preds_sorted_values)
-#H <- H[1:(CLI.args[2]),-which(names(new_predicted_data) %in% c("y_pred","y"))] # This simply picks out the first 100, not randomly as below (and in the paper).
-# We select the 100 test observations with the lowest predicted probability? Perhaps this is not what they mean by 
-# "the first 100 observations with an undesirable prediction"? 
-# I have gone away from the above first 100 sorted lowest predicted probabilities.
-# The code has been left here though, since I could probably discuss this in the report!
-
-new_predicted_data <- data.frame(cbind(adult.data[-train_indices, ], "y_pred" = preds)) 
+# Add predictions to original set of testing data. Then locate 100 points that are unfavourably predicted. 
+new_predicted_data <- data.frame(cbind(adult.data[row.names(test), ], "y_pred" = preds)) 
 H <- new_predicted_data[new_predicted_data$y_pred < 0.5, ] 
 s <- sample(1:nrow(H), size = CLI.args[2]) # Sample CLI.args[2] random points from H.
 H <- H[s,-which(names(new_predicted_data) %in% c("y_pred","y"))] 
 
 K <- as.numeric(CLI.args[3]) # Assume that the third command line input is an integer. 
 
-# Generation of counterfactuals for each point, before post-processing.
+# Generate counterfactuals for each of the 100 points in H.
 generate_counterfact_for_H <- function(H_l, K.num){
   D_h_per_point <- list()
   for (i in 1:nrow(H_l)){
@@ -275,8 +271,7 @@ if (CLI.args[4]){
   load(paste("results/D_hs/",filename_generation,".RData",sep=""), verbose = T)
 }
 
-######################################## Post-processing.
-
+####### Post-processing and calculating performance metrics!
 post.processing <- function(D_h, H, data){ # 'data' is used to calculate normalization factors for Gower.
   # Remove the rows of D_h (per point) not satisfying the listed criteria. 
   
@@ -291,24 +286,6 @@ post.processing <- function(D_h, H, data){ # 'data' is used to calculate normali
       norm.factors[[i]] <- NA
     }
   }
-  
-  make_actionable <- function(D_h, fixed_covariates, factual){
-    # Function used to remove all points from D_h which do not have the correct fixed covariate values as in the factual.
-    factual_values <- factual[fixed_covariates]
-    return(D_h[D_h[,fixed_covariates] == factual_values])
-  }
-  
-  fulfill_crit2 <- function(D_h_pp, H){
-    # Make sure that each possible counterfactual (per factual) has the correct fixed values. 
-    # This is not necessary for MCCE, but is necessary for ModMCCE (using VAE, not conditioned on the fixed features).
-    for (i in 1:length(D_h_pp)){
-      D_h <- D_h_pp[[i]]
-      D_h$age <- round(D_h$age) # This is done to be certain that ages are whole numbers. Should definitely be done somewhere else!
-      D_h_pp[[i]] <- make_actionable(D_h, fixed_features, H[i,])# Make sure that the counterfactuals are actionable (not necessary for trees, necessary for VAE).
-    }
-    return(D_h_pp)
-  }
-  
   
   fulfill_crit3_D_h <- function(D_h, c, pred.method){
     #D_h <- D_h_per_point[[1]]
@@ -336,7 +313,7 @@ post.processing <- function(D_h, H, data){ # 'data' is used to calculate normali
     }
     return(D_h_pp)
   }
-
+  
   ##### Fulfilling criterion 4.
   # Calculate Sparsity and Gower's distance for each D_h (per point).
   
@@ -352,7 +329,7 @@ post.processing <- function(D_h, H, data){ # 'data' is used to calculate normali
   }
   
   # Remove non-valid counterfactuals (those that don't change the prediction).
-  crit3_D_h_per_point <- fulfill_crit3(D_h_pp = list_of_values, c = 0.5, pred.method = CLI.args[1]) # Fulfill criterion 3 for all (unique) generated possible counterfactuals. 
+  crit3_D_h_per_point <- fulfill_crit3(D_h_pp = D_h, c = 0.5, pred.method = CLI.args[1]) # Fulfill criterion 3 for all (unique) generated possible counterfactuals. 
   
   # Add sparsity and Gower distance to each row. 
   crit4_D_h_all_points <- add_metrics_D_h_all_points(crit3_D_h_per_point,H, norm.factors)
@@ -362,12 +339,12 @@ post.processing <- function(D_h, H, data){ # 'data' is used to calculate normali
 D_h_post_processed <- post.processing(D_h_per_point, H, adult.data[,-14])
 
 # Sjekker at alt fungerer som det skal!
-crit3_D_h_per_point <- fulfill_crit3(D_h_per_point, 0.5, CLI.args[1])
-d <- D_h_per_point[[3]]
-d$relationship <- factor(d$relationship, levels = c(levels(d$relationship), "Husband"))
-onehot_test_dat <- as.data.frame(model.matrix(~.,data = d, contrasts.arg = list(
-  relationship = contrasts(adult.data$relationship, contrasts = FALSE)
-)))
+# crit3_D_h_per_point <- fulfill_crit3(D_h_per_point, 0.5, CLI.args[1])
+# d <- D_h_per_point[[3]]
+# d$relationship <- factor(d$relationship, levels = c(levels(d$relationship), "Husband"))
+# onehot_test_dat <- as.data.frame(model.matrix(~.,data = d, contrasts.arg = list(
+#   relationship = contrasts(adult.data$relationship, contrasts = FALSE)
+# )))
 # Ser at jeg må legge til ekstra levels for hver faktor der det mangler en level! (for at det skal være mulig å lage en model.matrix!)
 # Finnes det noen annen måte jeg kan gjøre dette på!?!?? Høre med Kjersti!!!
 
@@ -392,7 +369,7 @@ generate_one_counterfactual_all_points <- function(D_h_pp){
   for (i in 1:length(D_h_pp)){
     gen <- generate_one_counterfactual_D_h(D_h_pp[[i]])
     if (nrow(gen) > 1){ # It may happen that a several possible counterfactuals have the same sparsity and Gower distance.
-                        # In such cases we simply choose the first one.
+      # In such cases we simply choose the first one.
       D_h_pp[[i]] <- gen[1,]
     } else {
       D_h_pp[[i]] <- gen
