@@ -202,14 +202,14 @@ make_ggplot_for_categ <- function(data, filename, save){
   #adult.data.categ.wide <- adult.data.categ %>% tidyr::pivot_longer(categ)
   #adult.data.categ <- apply(adult.data.categ,FUN = function(x){table(x)/sum(table(x))}, MARGIN = 2)
   categ_plot <- data.categ.wide %>% ggplot(aes(x = name, y = ratio, fill = value)) +
-    geom_col(position = "stack")+#), show.legend = F) + # For kategorisk data må legend fjernes
+    geom_col(position = "stack", show.legend = F) + # For kategorisk data må legend fjernes
     geom_text(aes(label = ratio), position = position_stack(vjust = 0.5)) +
     theme_minimal() 
     #geom_text(nudge_y = 1)
-  if (save) ggsave(paste0("plots/",filename,".pdf"), width = 9, height = 5)
+  if (save) ggsave(paste0("plots/",filename,".pdf"), width = 10, height = 5)
   return(categ_plot)
 }
 
 # Vanskeligere å lage disse plottene for den kategoriske dataen!!
-make_ggplot_for_categ(adult.data, "adult_data_categ_ratios_bin_data", F)
-make_ggplot_for_categ(D2, "generated_exp1_categ_ratios_bin_data", F)
+make_ggplot_for_categ(adult.data, "adult_data_categ_ratios_cat_data", T)
+make_ggplot_for_categ(D2, "generated_exp1_categ_ratios_cat_data", T)

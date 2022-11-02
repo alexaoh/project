@@ -13,6 +13,8 @@ library(dplyr)
 library(MASS)
 source("code/utilities.R")
 
+set.seed(1234)
+
 # Parameter for standardscaler (centering and scaling) or not (normalization, i.e. min-max scaling).
 standardscaler <- T
 
@@ -208,8 +210,9 @@ history <- vae %>% fit(
 plot(history)
 
 ############################ Make some synthetic data!
-generation_method <- 1
+generation_method <- 4
 K <- 1e5L
+#K <- 3*nrow(x_train)
 
 # Could generate data in four different ways now. Test all of them below and add results to the report. 
 # Tried to match these numbers to the numbers used in the project report.
@@ -221,16 +224,48 @@ if (generation_method == 4){
   
 } else if (generation_method == 3){
   # Sample from the z's and add some uniform noise. 
-  z_s <- (encoder %>% predict(data.matrix(x_train)))[[3]] # IN THE REPORT I STATE THAT THE test-data IS RUN THROUGH. I NEED TO CHANGE THE TEXT THEN!
+  z_s <- (encoder %>% predict(data.matrix(x_train)))[[3]] 
   r <- slice_sample(as.data.frame(z_s), n = K, replace = T) # Sample K rows from the z's. 
-  s <- jitter(data.matrix(r), amount = 0) # Add some uniform noise to r.
+  s <- apply(data.matrix(r), 2, jitter, factor = 5, amount = 0) # Add 1/10*(max(column)-min(column)) uniform noise to each value in r. 
   
 } else if (generation_method == 2){
   # Sample K/nrow(x_train) times from latent space PER training data point. 
   # Her gir det ikke helt mening å generere noe annet enn n*nrow(x_train) antall samples, for at det skal bli balansert. 
-  # Det samme gjelder vel egentlig i metoden nedenfor?!
+  # Det samme gjelder vel egentlig i metoden nedenfor?! Dette har jeg valgt å ikke bry meg om her og heller diskutere i rapporten!
+  encoded <- encoder %>% predict(data.matrix(x_train))
+  mus <- encoded[[1]]
+  log_vars <- encoded[[2]]
   
-   
+  sample.after <- function(K, v_means, v_log_vars){
+    # Sample from one test point. 
+    mu <- as.numeric(v_means)
+    sigma <- diag(as.numeric((exp(v_log_vars/2))^2))
+    mvrnorm(n = K, mu = mu, Sigma = sigma)
+  }
+  
+  s <- matrix(NA, nrow = K, ncol = latent_dim)
+  indices <- seq(1,floor(K/nrow(x_train))*nrow(x_train), by = 2) # Trick for placing in the matrix above. 
+  for (r in 1:(nrow(x_train))){ # Sample whole times from each training sample latent distribution.
+    samp <- sample.after(floor(K/nrow(x_train)), mus[r,], log_vars[r,])
+    s[indices[r],] <- samp[1,] # Trick for placing in the matrix above. 
+    s[indices[r]+1,] <- samp[2,] # Trick for placing in the matrix above. 
+  }
+  # Some checks while developing. 
+  if (K %% nrow(x_train) != 0){all(is.na(s[(floor(K/nrow(x_train))*nrow(x_train)+1):K,]))}
+  any(is.na(s[1:(floor(K/nrow(x_train))*nrow(x_train)),]))
+  
+  if (K %% nrow(x_train) != 0){
+    # Then we need to fill the remaining K - (floor(K/nrow(x_train))*nrow(x_train)) = K %% nrow(x_train) with 1 sample from each randomly sampled input data point. 
+    sampl <- sample(x = 1:nrow(x_train), size = K %% nrow(x_train), replace = F) # Sample the remaining data points from the input sample. 
+    
+    n <- floor(K/nrow(x_train))*nrow(x_train)
+    for (r in (1:(K %% nrow(x_train)))){ # Sample one time from the latent distribution of each of the randomly sampled input data points. 
+      s[r+n,] <- sample.after(1, mus[sampl[r],], log_vars[sampl[r],])
+    }
+    # Check while developing --> Now the entire sample has been filled up. 
+    any(is.na(s))
+  }
+  
 } else if (generation_method == 1){
   # Run entire training data through entire VAE K/nrow(x_train) times.
   # Generation method 4 and 3 should be equivalent in theory, but might be different in practice because of seed-problems.
@@ -240,28 +275,6 @@ if (generation_method == 4){
   # Data set to run through model is now constructed — based on replicating the training data "enough" times. 
   s <- (encoder %>% predict(data.matrix(data_through)))[[3]]
 }
-
-# if (generation_method == 1){
-#   # CHECK if sampling is "good"
-#   scheck <- apply(s, MARGIN = 2, FUN = function(x){(x-mean(x))/sd(x)})
-#   df <- data.frame(s)
-#   colnames(df) <- c("Z1", "Z2")
-#   plt <- tibble(df) %>% 
-#     ggplot(aes(x = Z1, y = Z2)) +
-#     geom_point() +
-#     ggtitle("Sampled from 2d normal") +
-#     theme_minimal()
-#   print(plt)
-#   
-#   # Check if the data is sampled correctly from the multivariate Gaussian. 
-#   # The sampling seems to be correct!
-#   colMeans(v_means) - 3*colMeans((exp(v_log_vars/2)))
-#   colMeans(v_means) + 3*colMeans((exp(v_log_vars/2)))
-#   colMeans(v_means) - 2*colMeans((exp(v_log_vars/2)))
-#   colMeans(v_means) + 2*colMeans((exp(v_log_vars/2)))
-#   quantile(s[,1],c(0.01, 0.05, 0.95, 0.99))
-#   quantile(s[,2],c(0.01, 0.05, 0.95, 0.99))
-# }
 
 
 # Decode our latent sample s.
@@ -275,6 +288,22 @@ head(decoded_data_rand)
 
 # Revert the one hot encoding
 decoded_data_rand <- reverse.onehot.encoding(decoded_data_rand, cont, categ, has.label = F)
+
+# Change the names of the categorical values in the decoded data. 
+decoded_data_rand$workclass[decoded_data_rand$workclass == "workclass..Private"] <- " Private"
+decoded_data_rand$workclass[decoded_data_rand$workclass == "workclass..Other"] <- " Other"
+decoded_data_rand$marital_status[decoded_data_rand$marital_status == "marital_status..Other"] <- " Other"
+decoded_data_rand$marital_status[decoded_data_rand$marital_status == "marital_status..Married.civ.spouse"] <- " Married-civ-spouse"
+decoded_data_rand$occupation[decoded_data_rand$occupation == "occupation..Other"] <- " Other"
+decoded_data_rand$occupation[decoded_data_rand$occupation == "occupation..Craft.repair"] <- " Craft-repair"
+decoded_data_rand$relationship[decoded_data_rand$relationship == "relationship..Husband"] <- " Husband"
+decoded_data_rand$relationship[decoded_data_rand$relationship == "relationship..Other"] <- " Other"
+decoded_data_rand$race[decoded_data_rand$race == "race..Other"] <- " Other"
+decoded_data_rand$race[decoded_data_rand$race == "race..White"] <- " White"
+decoded_data_rand$native_country[decoded_data_rand$native_country == "native_country..Other"] <- " Other"
+decoded_data_rand$native_country[decoded_data_rand$native_country == "native_country..United.States"] <- " United-States"
+decoded_data_rand$sex[decoded_data_rand$sex == "sex..Male"] <- " Male"
+decoded_data_rand$sex[decoded_data_rand$sex == "sex..Female"] <- " Female"
 
 # De-normalize the generated data, such that it is on the same scale as the adult data. 
 if (standardscaler){
@@ -366,7 +395,7 @@ make_ggplot_for_categ <- function(data, filename, save){
 
 # Vanskeligere å lage disse plottene for den kategoriske dataen!!
 make_ggplot_for_categ(adult.data, "ikkenoeenda", F)
-make_ggplot_for_categ(decoded_data_rand, "ja", F) # Legg inn dette senere!
+make_ggplot_for_categ(decoded_data_rand[,colnames(adult.data)[-14]], "generated_exp2_categ_ratios_bin_data_method4", F) # Legg inn dette senere!
 
 
 #### For illustration purposes we make a scatter plot of the latent space (when 2 dimensional).
@@ -439,9 +468,9 @@ sd((df %>% filter(Label == 0) %>% dplyr::select(Z2))$Z2)
 
 
 ###################################### Try "deployment phase" in Olsen 2021 (page 10 + 11).
-# Dette skal tilsvare min generation_method = 2 oppe!! (det var tanken).
+# Dette skal tilsvare min generation_method = 2 oppe!! (det var tanken). Har brukt denne tankegangen i generation_method = 2 oppe!
 K <- 1
-variational_parameters <- encoder %>% predict(data.matrix(x_test[1,])) # Eller bruke treningsdataene her?
+variational_parameters <- encoder %>% predict(data.matrix(x_train[1,])) # Eller bruke treningsdataene her?
 v_means <- variational_parameters[[1]]
 v_log_vars <- variational_parameters[[2]] 
 
@@ -455,6 +484,12 @@ z_test <- sample.after(K, v_means, v_log_vars)
 dec_test <- decoder %>% predict(matrix(z_test, nrow = 1))
 dec_test <- as.data.frame(dec_test)
 colnames(dec_test) <- colnames(x_test)
+
+data_orig2 <- t(apply(dec_test[,cont], 1, function(r)r*M + m))
+data_orig2 <- cbind(data_orig2, as.data.frame(dec_test[,-which(names(dec_test) %in% cont)]))
+decoded_data_rand <- data_orig2  
+decoded_data_rand <- reverse.onehot.encoding(decoded_data_rand, cont, categ, has.label = F)
+
 # De normalize the data according to the test data. 
 #decoded_data_rand <- de.normalize.data(decoded_data_rand, cont, x_test.normalization$mins, x_test.normalization$maxs)
 
