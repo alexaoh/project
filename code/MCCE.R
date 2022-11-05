@@ -57,6 +57,7 @@ if (CLI.args[1] == "ANN"){
   # The data is normalized (for performance) when we want to use the ANN as a predictive model. 
   adult.data.normalized <- normalize.data(data = adult.data.onehot, continuous_vars = cont, standardscaler = T) 
   # returns list with data, mins and maxs or data, means and sds (depending on standardscaler or not).
+  # THIS IS WRONG ALREADY! This is not the correct way to normalize the data! Done correctly in newer files!
   
   #summary(adult.data.normalized)
   adult.data.onehot <- adult.data.normalized[[1]] # We are only interested in the data for now.

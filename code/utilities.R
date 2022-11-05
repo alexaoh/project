@@ -83,15 +83,23 @@ plot_tree <- function(index){
   }
 }
 
-make.data.for.ANN <- function(data, cont){
+make.data.for.ANN <- function(data, cont, label){
   # Make design matrix via one-hot encoding of the categorical variables. 
   text <- data[,-which(names(data) %in% cont)]
-  text <- text[,-ncol(text)] # Remove the label!
+  if (label){
+    text <- text[,-ncol(text)] # Remove the label! 
+  }
   numbers <- data[,which(names(data) %in% cont)]
   encoded <- caret::dummyVars(" ~ .", data = text, fullRank = F)
   data_encoded <- data.frame(predict(encoded, newdata = text))
   
-  return(cbind(numbers, data_encoded, data["y"]))
+  if (label){
+    final_data <- cbind(numbers, data_encoded, data["y"])  
+  } else {
+    final_data <- cbind(numbers, data_encoded)  
+  }
+  
+  return(final_data)
 }
 
 reverse.onehot.encoding <- function(data, cont, categ, has.label){
@@ -207,9 +215,9 @@ sparsity_D_h <- function(x_h,D_h){
 
 gower_D_h <- function(x_h, D_h, norm.factors){
   # Calculates Gower's distance for one counterfactual x_h.
-  library(gower) # Could try to use this package instead of calculating everything by hand below!
+  #library(gower) # Could try to use this package instead of calculating everything by hand below!
   D_h$gower <- rep(NA, nrow(D_h))
-  D_h$gowerpack <- rep(NA, nrow(D_h)) # Result from package.
+  #D_h$gowerpack <- rep(NA, nrow(D_h)) # Result from package.
   dtypes <- sapply(x_h[colnames(x_h)], class)
   
   if (nrow(D_h) >= 1){
@@ -220,16 +228,16 @@ gower_D_h <- function(x_h, D_h, norm.factors){
       for (j in 1:p){ 
         d_j <- D_h[i,j]
         if (dtypes[j] == "integer" || dtypes[j] == "numeric"){ # If we normalize we need to have "numeric" here.
-          m <- norm.factors[[j]][1]
-          M <- norm.factors[[j]][2]
+          m_j <- norm.factors[[j]][1]
+          M_j <- norm.factors[[j]][2]
           z <- abs(d_j-x_h[,j])
           #R_j <- (M-m)*z/(z-m)
           # Or alternatively, we simply divide by M-m
-          R_j <- M-m # I think this solution makes more sense! We assume that the data is well modeled earlier, such that 
+          R_j <- M_j-m_j # I think this solution makes more sense! We assume that the data is well modeled earlier, such that 
           # z does not become larger than R_j and the total factor delta_G will stay between 0 and 1. 
-          if (z != 0){ 
-            g <- g + 1/R_j*z
-          }
+          #if (z != 0){ 
+          g <- g + 1/R_j*z
+          #}
           
         } else if (dtypes[j] == "factor"){
           if (x_h[,j] != d_j){
@@ -238,7 +246,7 @@ gower_D_h <- function(x_h, D_h, norm.factors){
         }
       }
       D_h[i,"gower"] <- g/p
-      D_h[i,"gowerpack"] <- gower_dist(x_h,D_h[i,colnames(x_h)])
+      #D_h[i,"gowerpack"] <- gower_dist(x_h,D_h[i,colnames(x_h)])
     }
   }
   return(D_h)

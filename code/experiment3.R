@@ -49,7 +49,7 @@ data.table::address(adult.data.onehot)
 # The memory addresses are different. 
 
 # Make the design matrix for the DNN.
-adult.data.onehot <- make.data.for.ANN(adult.data.onehot, cont) 
+adult.data.onehot <- make.data.for.ANN(adult.data.onehot, cont, label = T) 
 
 #normalized <- normalize.data(data = adult.data.onehot, continuous_vars = cont, standardscaler = standardscaler)
 #adult.data.onehot <- normalized[[1]]
@@ -246,7 +246,8 @@ preds <- as.numeric(ANN %>% predict(data.matrix(x_test)))
 new_predicted_data <- data.frame(cbind(adult.data[row.names(test), ], "y_pred" = preds)) 
 H <- new_predicted_data[new_predicted_data$y_pred < 0.5, ] 
 s <- sample(1:nrow(H), size = CLI.args[2]) # Sample CLI.args[2] random points from H.
-H <- H[s,-which(names(new_predicted_data) %in% c("y_pred","y"))] 
+H <- H[s,-which(names(new_predicted_data) %in% c("y_pred","y"))]  
+
 
 K <- as.numeric(CLI.args[3]) # Assume that the third command line input is an integer. 
 
@@ -267,35 +268,57 @@ filename_generation <- paste(CLI.args[1],"_H",CLI.args[2],"_K",CLI.args[3],"_bin
 if (CLI.args[4]){
   D_h_per_point <- generate_counterfact_for_H(H_l = H, K) # Generate the matrix D_h for each factual we want to explain (in H)
   save(D_h_per_point, file = paste("results/D_hs/",filename_generation,".RData",sep="")) # Save the generated D_h per point.
+  save(H, file = paste("results/Hs/H_",filename_generation,".RData",sep=""))
 } else if (CLI.args[4] != T){
   load(paste("results/D_hs/",filename_generation,".RData",sep=""), verbose = T)
 }
 
-####### Post-processing and calculating performance metrics!
+########### Post-processing and calculating performance metrics!
 post.processing <- function(D_h, H, data){ # 'data' is used to calculate normalization factors for Gower.
   # Remove the rows of D_h (per point) not satisfying the listed criteria. 
-  
+
   # Find the normalization factors for Gower.
   norm.factors <- list()
   for (i in 1:length(colnames(data))){
     colm <- (data %>% select(colnames(data)[i]))[[1]]
     if (class(colm) == "integer" || class(colm) == "numeric"){
       q <- quantile(colm, c(0.01, 0.99))
-      norm.factors[[i]] <- c(q[1][[1]],q[2][[1]]) # Using min-max scaling, but with 0.01 and 0.99 quantiles!
+      norm.factors[[i]] <- c(q[1][[1]],q[2][[1]]) # Divide each term in Gower by M_j-m_j, but with 0.99 and 0.01 quantiles respectively!
     } else {
       norm.factors[[i]] <- NA
     }
   }
   
-  fulfill_crit3_D_h <- function(D_h, c, pred.method){
-    #D_h <- D_h_per_point[[1]]
-    #pred.method <- "ANN"
-    if (pred.method == "ANN"){
-      onehot_test_dat <- as.data.frame(model.matrix(~.,data = D_h)) # Det er her den failer (for D_h'er som ikke har nok verdier!!)
-      predictions <- prediction_model(onehot_test_dat, method = pred.method)
-    } else {
-      predictions <- prediction_model(D_h, method = pred.method)
+  fulfill_crit3_D_h <- function(D_h, c){
+    # Build design matrix manually to avoid contrast problems with factors with missing levels (when not generating "enough" data)!!
+    col_names <- colnames(x_test)
+    col_names_categ <- setdiff(col_names,cont)
+    onehot_test_dat <- data.frame(D_h[,cont])
+    col_names_D_h <- colnames(D_h)
+    col_names_D_h <- setdiff(col_names_D_h,cont)
+    for (n in col_names_D_h){
+      true_factors <- levels(adult.data[,n]) # Find the factors we want from adult.data
+      for (new_col in 1:length(true_factors)){ # Make one new column per factor in the design matrix.
+        column_name_new <- paste0(n,"..",substring(true_factors[new_col], 2, nchar(true_factors[new_col])))
+        onehot_test_dat[,column_name_new] <- ifelse(D_h[n] == true_factors[new_col], 1,0)
+      }
     }
+    # Now the manual design matrix has been built!
+    
+    # Normalize the data before prediction.
+    if (standardscaler){
+      d_onehot_test <- scale(onehot_test_dat[,cont], center = m, scale = M)
+      catego <- setdiff(names(onehot_test_dat), cont)
+      onehot_test_dat <- cbind(d_onehot_test, onehot_test_dat[,catego])[,colnames(onehot_test_dat)]
+    } else {
+      # min-max normalization according to mins and maxes from training data. 
+      for (j in 1:length(cont)){
+        cont_var <- cont[j]
+        onehot_test_dat[,cont_var] <- (onehot_test_dat[,cont_var]-m[j])/(M[j]-m[j])
+      }
+    }
+    
+    predictions <- as.numeric(ANN %>% predict(data.matrix(onehot_test_dat)))
     #c <- 0.5
     D_h_crit3 <- D_h[predictions >= c,] # prediction_model(*) is the R function that predicts 
     # according to the model we want to make explanations for. 
@@ -305,11 +328,10 @@ post.processing <- function(D_h, H, data){ # 'data' is used to calculate normali
   }
   
   # Fulfill criterion 3.
-  fulfill_crit3 <- function(D_h_pp, c, pred.method){
+  fulfill_crit3 <- function(D_h_pp, c){
     for (i in 1:length(D_h_pp)){
       D_h <- D_h_pp[[i]]
-      D_h_pp[[i]] <- fulfill_crit3_D_h(D_h, c, pred.method)
-      #D_h_pp[[i]] <- # Make sure that the counterfactuals are actionable (not necessary for trees, necessary for VAE).
+      D_h_pp[[i]] <- fulfill_crit3_D_h(D_h, c)
     }
     return(D_h_pp)
   }
@@ -329,7 +351,7 @@ post.processing <- function(D_h, H, data){ # 'data' is used to calculate normali
   }
   
   # Remove non-valid counterfactuals (those that don't change the prediction).
-  crit3_D_h_per_point <- fulfill_crit3(D_h_pp = D_h, c = 0.5, pred.method = CLI.args[1]) # Fulfill criterion 3 for all (unique) generated possible counterfactuals. 
+  crit3_D_h_per_point <- fulfill_crit3(D_h_pp = D_h, c = 0.5) # Fulfill criterion 3 for all (unique) generated possible counterfactuals. 
   
   # Add sparsity and Gower distance to each row. 
   crit4_D_h_all_points <- add_metrics_D_h_all_points(crit3_D_h_per_point,H, norm.factors)
@@ -337,17 +359,6 @@ post.processing <- function(D_h, H, data){ # 'data' is used to calculate normali
 }
 
 D_h_post_processed <- post.processing(D_h_per_point, H, adult.data[,-14])
-
-# Sjekker at alt fungerer som det skal!
-# crit3_D_h_per_point <- fulfill_crit3(D_h_per_point, 0.5, CLI.args[1])
-# d <- D_h_per_point[[3]]
-# d$relationship <- factor(d$relationship, levels = c(levels(d$relationship), "Husband"))
-# onehot_test_dat <- as.data.frame(model.matrix(~.,data = d, contrasts.arg = list(
-#   relationship = contrasts(adult.data$relationship, contrasts = FALSE)
-# )))
-# Ser at jeg må legge til ekstra levels for hver faktor der det mangler en level! (for at det skal være mulig å lage en model.matrix!)
-# Finnes det noen annen måte jeg kan gjøre dette på!?!?? Høre med Kjersti!!!
-
 
 ############ Do we want several counterfactuals per factual or only one? Below we select one!
 generate_one_counterfactual_D_h <- function(D_h){
