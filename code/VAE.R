@@ -23,7 +23,7 @@ cont <- c("age","fnlwgt","education_num","capital_gain","capital_loss","hours_pe
 categ <- setdiff(names(adult.data), cont)
 categ <- categ[-length(categ)] # Remove the label "y"!
 
-adult.data.onehot <- make.data.for.ANN(adult.data, cont)
+adult.data.onehot <- make.data.for.ANN(adult.data, cont, label = T)
 
 # Make train and test data.
 train_and_test_data <- make.train.and.test(data = adult.data.onehot) # The function returns two matrices (x) and two vectors (y). 

@@ -13,6 +13,14 @@ library(dplyr)
 library(MASS)
 source("code/utilities.R")
 
+##### First we have to build the classifier using the ANN!
+# Perhaps best to simply save the fit from experiment 3 and load the weights + architecture here later!
+ANN <- load_model_hdf5("ANN_experiment3.h5") # Thus the classifier (fully fitted) is here. 
+# Need to be careful such that I use the same data for training and testing as in experiment 3 then!
+# Two options: 
+# 1. Save the training and test data from experiment 3 to csvs.
+# 2. Train the model again with the same seed (which should give the same results, but probably won't because of seed problems. )
+
 set.seed(1234)
 
 # Parameter for standardscaler (centering and scaling) or not (normalization, i.e. min-max scaling).
@@ -45,13 +53,13 @@ train <- adult.data.onehot[train.indices, ]
 test <- adult.data.onehot[-train.indices, ]
 
 # Scale training data. 
-train.normalization <- normalize.data(data = train, continuous_vars = cont, standardscaler = standardscaler) # returns list with data, mins and maxs.
-train <- train.normalization[[1]]
-m <- train.normalization[[2]]
-M <- train.normalization[[3]]
+train.normalization.vae <- normalize.data(data = train_vae, continuous_vars = cont, standardscaler = standardscaler) # returns list with data, mins and maxs.
+train_vae <- train.normalization.vae[[1]]
+m_vae <- train.normalization.vae[[2]]
+M_vae <- train.normalization.vae[[3]]
 
-x_train <- train[,-which(names(train) == "y")]
-y_train <- train[, "y"] # Use this for visualization later only.
+x_train_vae <- train[,-which(names(train_vae) == "y")]
+y_train_vae <- train_vae[, "y"] # Use this for visualization later only.
 
 # Make validation data also. THIS IS NOT NECESSARY WHEN FOR THE VAE, SINCE I WANT TO TRAIN IT ON ALL THE DATA. 
 # In cases where validation data is dropped I simply use the testing data as validation data when fitting the VAE.
@@ -63,9 +71,9 @@ y_train <- train[, "y"] # Use this for visualization later only.
 # Scaling according to the same values abtained when scaling the training data! This is very important in all applications for generalizability!!
 if (standardscaler){
   # Centering and scaling according to scales and centers from training data. 
-  d_test <- scale(test[,cont], center = m, scale = M)
-  catego <- setdiff(names(test), cont)
-  test <- cbind(d_test, test[,catego])[,colnames(test)]
+  d_test <- scale(test_vae[,cont], center = m_vae, scale = M_vae)
+  catego <- setdiff(names(test_vae), cont)
+  test_vae <- cbind(d_test, test_vae[,catego])[,colnames(test_vae)]
   
   #d_valid <- scale(valid[,cont], center = m, scale = M)
   #catego <- setdiff(names(valid), cont)
@@ -74,23 +82,15 @@ if (standardscaler){
   # min-max normalization according to mins and maxes from training data. 
   for (j in 1:length(cont)){
     cont_var <- cont[j]
-    test[,cont_var] <- (test[,cont_var]-m[j])/(M[j]-m[j])
+    test_vae[,cont_var] <- (test_vae[,cont_var]-m_vae[j])/(M_vae[j]-m_vae[j])
     #valid[,cont_var] <- (valid[,cont_var]-m[j])/(M[j]-m[j])
   }
 }
 
-x_test <- test[,-which(names(test) == "y")]
-#y_test <- test[,"y"]
-
-#x_valid <- valid[,-which(names(valid) == "y")]
-#y_valid <- valid[,"y"]
-
-# Scale the adult data as well, such that we can compare the data sets after generation. 
-#adult.data.normalization <- normalize.data(data = adult.data.onehot, continuous_vars = cont, standardscaler = T)
-#adult.data.onehot <- adult.data.normalization[[1]]
+x_test_vae <- test_vae[,-which(names(test_vae) == "y")]
 
 
-############################ Build the VAE. 
+################################## Fit the VAE (for generation of counterfactuals in point 2)
 # Build the VAE.
 latent_dim <- 8L # This sets the size of the latent representation (vector), 
 intermediate_dim <- 15L
@@ -394,102 +394,4 @@ make_ggplot_for_categ <- function(data, filename, save){
 make_ggplot_for_categ(adult.data, "ikkenoeenda", F)
 make_ggplot_for_categ(decoded_data_rand[,colnames(adult.data)[-14]], "generated_exp2_categ_ratios_bin_data_method4", F) # Legg inn dette senere!
 
-
-#### For illustration purposes we make a scatter plot of the latent space (when 2 dimensional).
-library(ggplot2)
-library(dplyr)
-latent_train_data <- (encoder %>% predict(data.matrix(x_train)))[[3]] # We only need the latent values for this. 
-if (latent_dim == 2){
-  df <- data.frame(cbind(latent_train_data, y_train))
-  df$y_train<- as.factor(df$y_train)
-  colnames(df) <- c("Z1", "Z2", "Label")
-  plt <- tibble(df) %>% 
-    ggplot(aes(x = Z1, y = Z2, color = Label)) +
-    geom_point() +
-    ggtitle("Training data representation from VAE in 2D latent space") +
-    theme_minimal()
-  print(plt)
-} else {
-  # Use PCA to represent our training data (first two principal components)
-  # Should perhaps use a non-linear dim-reduction algorithm instead here!
-  pca <- princomp(latent_train_data)
-  print(summary(pca))
-  scores <- pca$scores
-  df <- data.frame(cbind(scores[,1], scores[,2], y_train))
-  df$y_train<- as.factor(df$y_train)
-  colnames(df) <- c("Z1", "Z2", "Label")
-  plt <- tibble(df) %>% 
-    ggplot(aes(x = Z1, y = Z2, color = Label)) +
-    geom_point() +
-    ggtitle(paste0("PCA training data representation from VAE in ", latent_dim,"D latent space")) +
-    theme_minimal()
-  print(plt)
-  
-  
-  # Plot the first 3 components of PCA.
-  library(rgl)
-  plot3d(
-    x = scores[,1], 
-    y = scores[,2],
-    z = scores[,3],
-    col = as.factor(as.numeric(df$Label)+1),
-    xlab = "P1",
-    ylab = "P2",
-    zlab = "P3"
-  )
-  rglwidget()
-  
-  # Use t-SNE to try to reduce the dimension to 2 (for visualization).
-  library(Rtsne)
-  tsne_out <- Rtsne(latent_train_data, pca = F, perplexity = 30, theta = 0.8)
-  plot(tsne_out$Y, col = df$Label, asp = 1)
-}
-
-# Noen nøkkeltall (sjekker om generation gir mening). Mest for generation_method 1 kanskje?
-mean(df$Z1)
-mean(df$Z2)
-sd(df$Z1)
-sd(df$Z2)
-mean(s[,1])
-mean(s[,2])
-sd(s[,1])
-sd(s[,2])
-mean((df %>% filter(Label == 1) %>% dplyr::select(Z1))$Z1)
-mean((df %>% filter(Label == 1) %>% dplyr::select(Z2))$Z2)
-mean((df %>% filter(Label == 0) %>% dplyr::select(Z1))$Z1)
-mean((df %>% filter(Label == 0) %>% dplyr::select(Z2))$Z2)
-sd((df %>% filter(Label == 1) %>% dplyr::select(Z1))$Z1)
-sd((df %>% filter(Label == 1) %>% dplyr::select(Z2))$Z2)
-sd((df %>% filter(Label == 0) %>% dplyr::select(Z1))$Z1)
-sd((df %>% filter(Label == 0) %>% dplyr::select(Z2))$Z2)
-
-
-###################################### Try "deployment phase" in Olsen 2021 (page 10 + 11).
-# Dette skal tilsvare min generation_method = 2 oppe!! (det var tanken). Har brukt denne tankegangen i generation_method = 2 oppe!
-K <- 1
-variational_parameters <- encoder %>% predict(data.matrix(x_train[1,])) # Eller bruke treningsdataene her?
-v_means <- variational_parameters[[1]]
-v_log_vars <- variational_parameters[[2]] 
-
-sample.after <- function(K, v_means, v_log_vars){
-  # Sample from one test point. 
-  mu <- as.numeric(v_means)
-  sigma <- diag(as.numeric((exp(v_log_vars/2))^2))
-  mvrnorm(n = K, mu = mu, Sigma = sigma)
-}
-z_test <- sample.after(K, v_means, v_log_vars)
-dec_test <- decoder %>% predict(matrix(z_test, nrow = 1))
-dec_test <- as.data.frame(dec_test)
-colnames(dec_test) <- colnames(x_test)
-
-data_orig2 <- t(apply(dec_test[,cont], 1, function(r)r*M + m))
-data_orig2 <- cbind(data_orig2, as.data.frame(dec_test[,-which(names(dec_test) %in% cont)]))
-decoded_data_rand <- data_orig2  
-decoded_data_rand <- reverse.onehot.encoding(decoded_data_rand, cont, categ, has.label = F)
-
-# De normalize the data according to the test data. 
-#decoded_data_rand <- de.normalize.data(decoded_data_rand, cont, x_test.normalization$mins, x_test.normalization$maxs)
-
-# Revert the one hot encoding
-#adult.data.reverse.onehot <- reverse.onehot.encoding(adult.data.onehot, cont, categ, has.label = T)
-decoded_data_rand <- reverse.onehot.encoding(decoded_data_rand, cont, categ, has.label = F)
+############################### Post-processing (inspired by Experiment 3).
