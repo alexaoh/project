@@ -1,5 +1,5 @@
-# Experiment 2: Make generative model for our data set and sample synthetic data. 
-# Our goal is for the synthetic (generated) sample to be very similar to our input data. 
+# Experiment 5: Use Modified MCCE to generate counterfactuals for the same factuals as in MCCE. 
+# Then the results can be compared. 
 
 rm(list = ls())  # make sure to remove previously loaded variables into the Session.
 
@@ -206,7 +206,8 @@ history <- vae %>% fit(
 
 plot(history)
 
-############################ Make some synthetic data!
+########## Make some counterfactuals. 
+######### We load the same Hs as used in experiment 3 and generate counterfactuals for these. 
 generation_method <- 4
 K <- 1e5L
 #K <- 3*nrow(x_train)

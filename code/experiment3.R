@@ -27,13 +27,35 @@ standardscaler = T
 set.seed(42) # Set seed to begin with!
 
 # Load the data we want first. Loading and cleaning the original data is done in separate files. 
+# We also load the classifier (and the testing data) based on the binarized or the categorical data. 
 if (CLI.args[5]){
   load("data/adult_data_binarized.RData", verbose = T) # Binarized factors in the data. 
+  ANN <- load_model_hdf5("classifiers/ANN_experiment3.h5") # Load the classifier for step 1. 
+  load("data/exp3_data/test_data_exp3_ANN.RData", verbose = T)
+  normalization_constants <- read.csv("data/exp3_data/normalization_constants_exp3.csv")
 } else if (CLI.args[5] != T){
   load("data/adult_data_categ.RData", verbose = T) # Categorical factors as they come originally. 
+  ANN <- load_model_hdf5("classifiers/ANN_experiment4.h5") # Load the classifier for step 1. 
+  load("data/exp4_data/test_data_exp4_ANN.RData", verbose = T)
+  normalization_constants <- read.csv("data/exp3_data/normalization_constants_exp4.csv")
 } else {
   stop("Please supply either T (binarized data) of F (categorical data) as the fit CLI argument.")
 }
+
+# Quickly check how the fitted classifier actually performs. 
+x_test_ANN <- test_ANN[,-which(names(test_ANN) == "y")]
+y_test_ANN <- test_ANN[,"y"]
+
+ANN %>% evaluate(data.matrix(x_test_ANN), y_test_ANN)
+y_pred <- ANN %>% predict(data.matrix(x_test_ANN)) #%>% `>=`(0.5) #%>% k_cast("int32")
+print(confusionMatrix(factor(as.numeric(y_pred %>% `>=`(0.5))), factor(y_test_ANN)))
+print(roc(response = y_test_ANN, predictor = as.numeric(y_pred), plot = T))
+results <- HMeasure(y_test_ANN,as.numeric(y_pred),threshold=0.5)
+print(results$metrics$AUC)
+
+# Make sure we have the correct normalization constants for later. 
+m <- normalization_constants$m
+M <- normalization_constants$M
 
 cont <- c("age","fnlwgt","education_num","capital_gain","capital_loss","hours_per_week")
 # List of categorical variables (used to reverse onehot encode later!)
@@ -50,97 +72,6 @@ data.table::address(adult.data.onehot)
 
 # Make the design matrix for the DNN.
 adult.data.onehot <- make.data.for.ANN(adult.data.onehot, cont, label = T) 
-
-#normalized <- normalize.data(data = adult.data.onehot, continuous_vars = cont, standardscaler = standardscaler)
-#adult.data.onehot <- normalized[[1]]
-
-# Make train and test data for our model matrix adult.data.
-sample.size <- floor(nrow(adult.data.onehot) * 2/3)
-train.indices <- sample(1:nrow(adult.data.onehot), size = sample.size)
-train <- adult.data.onehot[train.indices, ]
-test <- adult.data.onehot[-train.indices, ]
-
-# Scale training data. 
-train.normalization <- normalize.data(data = train, continuous_vars = cont, standardscaler = standardscaler) # returns list with data, mins and maxs.
-train <- train.normalization[[1]]
-m <- train.normalization[[2]]
-M <- train.normalization[[3]]
-
-x_train <- train[,-which(names(train) == "y")]
-y_train <- train[, "y"]
-
-# Make validation data also.
-sample.size.valid <- floor(nrow(test) * 1/3)
-valid.indices <- sample(1:nrow(test), size = sample.size.valid)
-valid <- test[valid.indices, ]
-test <- test[-valid.indices, ]
-
-# Scaling according to the same values obtained when scaling the training data! This is very important in all applications for generalizability!!
-if (standardscaler){
-  # Centering and scaling according to scales and centers from training data. 
-  d_test <- scale(test[,cont], center = m, scale = M)
-  catego <- setdiff(names(test), cont)
-  test <- cbind(d_test, test[,catego])[,colnames(test)]
-  
-  d_valid <- scale(valid[,cont], center = m, scale = M)
-  catego <- setdiff(names(valid), cont)
-  valid <- cbind(d_valid, valid[,catego])[,colnames(valid)]
-} else {
-  # min-max normalization according to mins and maxes from training data. 
-  for (j in 1:length(cont)){
-    cont_var <- cont[j]
-    test[,cont_var] <- (test[,cont_var]-m[j])/(M[j]-m[j])
-    valid[,cont_var] <- (valid[,cont_var]-m[j])/(M[j]-m[j])
-  }
-}
-
-x_test <- test[,-which(names(test) == "y")]
-y_test <- test[,"y"]
-
-x_valid <- valid[,-which(names(valid) == "y")]
-y_valid <- valid[,"y"]
-
-
-##################### Step 1: Fit the ANN.
-ANN <- keras_model_sequential() %>%
-  layer_dense(units = 18, activation = 'relu', input_shape = c(ncol(x_train))) %>%
-  layer_dense(units = 9, activation = 'relu') %>% 
-  layer_dense(units = 3, activation = 'relu') %>% 
-  layer_dense(units = 1, activation = 'sigmoid')
-
-# compile (define loss and optimizer)
-ANN %>% compile(loss = 'binary_crossentropy',
-                optimizer = optimizer_adam(), # Could try other optimizers also.  #learning_rate = 0.002
-                metrics = c('accuracy'))
-
-# train (fit)
-history <- ANN %>% fit(x = data.matrix(x_train), 
-                       y = y_train, 
-                       epochs = 30, 
-                       batch_size = 1024, 
-                       validation_data = list(data.matrix(x_valid), y_valid)
-                       )
-
-# plot
-plot(history)
-
-print(summary(ANN))
-
-# evaluate on training data. 
-ANN %>% evaluate(data.matrix(x_train), y_train)
-
-# evaluate on test data. 
-ANN %>% evaluate(data.matrix(x_test), y_test)
-
-y_pred <- ANN %>% predict(data.matrix(x_test)) #%>% `>=`(0.5) #%>% k_cast("int32")
-print(confusionMatrix(factor(as.numeric(y_pred %>% `>=`(0.5))), factor(y_test)))
-print(roc(response = y_test, predictor = as.numeric(y_pred), plot = T))
-results <- HMeasure(y_test,as.numeric(y_pred),threshold=0.5)
-print(results$metrics$AUC)
-######################### Step 1 of predictor fitting is complete!!
-
-
-
 
 #########################Step 2: Use MCCE to generate counterfactuals for 100 randomly sample individuals in the test data.
 # First we need to build the trees and build the latent distribution model. 
@@ -239,15 +170,14 @@ generate <- function(h, K){ # K = 10000 is used in the article for the experimen
   # This is an implementation detail that is done to be able to easier calculated sparsity etc in the pre-processing. 
 }
 
-# Make predictions from ANN on all of the the test data.
-preds <- as.numeric(ANN %>% predict(data.matrix(x_test)))
+# Make predictions from ANN on all of the test data.
+preds <- as.numeric(ANN %>% predict(data.matrix(x_test_ANN)))
 
 # Add predictions to original set of testing data. Then locate 100 points that are unfavourably predicted. 
-new_predicted_data <- data.frame(cbind(adult.data[row.names(test), ], "y_pred" = preds)) 
+new_predicted_data <- data.frame(cbind(adult.data[row.names(test_ANN), ], "y_pred" = preds)) 
 H <- new_predicted_data[new_predicted_data$y_pred < 0.5, ] 
 s <- sample(1:nrow(H), size = CLI.args[2]) # Sample CLI.args[2] random points from H.
 H <- H[s,-which(names(new_predicted_data) %in% c("y_pred","y"))]  
-
 
 K <- as.numeric(CLI.args[3]) # Assume that the third command line input is an integer. 
 
@@ -291,7 +221,7 @@ post.processing <- function(D_h, H, data){ # 'data' is used to calculate normali
   
   fulfill_crit3_D_h <- function(D_h, c){
     # Build design matrix manually to avoid contrast problems with factors with missing levels (when not generating "enough" data)!!
-    col_names <- colnames(x_test)
+    col_names <- colnames(x_test_ANN)
     col_names_categ <- setdiff(col_names,cont)
     onehot_test_dat <- data.frame(D_h[,cont])
     col_names_D_h <- colnames(D_h)
@@ -428,7 +358,10 @@ for (i in 1:length(final_counterfactuals)){
   } 
 }
 
-exp1_MCCE <- data.frame("L0" = mean(L0s), "L2" = mean(L2s), "N_CE" = sum(N_CEs))
-knitr::kable(exp1_MCCE)
-write.csv(exp1_MCCE, file = paste("results/resulting_metrics_", filename_generation, ".csv", sep = ""))
+exp_MCCE <- data.frame("L0" = mean(L0s), "L2" = mean(L2s), "N_CE" = sum(N_CEs))
+knitr::kable(exp_MCCE)
+write.csv(exp_MCCE, file = paste("results/resulting_metrics_", filename_generation, ".csv", sep = ""))
 save(final_counterfactuals, file = paste("results/final_counterfactuals_", filename_generation, ".RData", sep = ""))
+
+# After generation is done, make latex tables I can paste into report. 
+knitr::kable(exp_MCCE, format = "latex", linesep = "", digits = 1, booktabs = T) %>% print()
