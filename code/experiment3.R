@@ -62,6 +62,7 @@ cont <- c("age","fnlwgt","education_num","capital_gain","capital_loss","hours_pe
 categ <- setdiff(names(adult.data), cont)
 categ <- categ[-length(categ)] # Remove the label "y"!
 
+##################### The code below (until step2) is not needed I think!
 ############ We do not care about the first CLI-argument (the model).
 ############ We simply (for now) only implement the ANN, for less clutter :)
 adult.data.onehot <- data.frame(adult.data) # make a copy of the dataframe for one hot encoding in ANN.
@@ -210,7 +211,7 @@ post.processing <- function(D_h, H, data){ # 'data' is used to calculate normali
   # Find the normalization factors for Gower.
   norm.factors <- list()
   for (i in 1:length(colnames(data))){
-    colm <- (data %>% select(colnames(data)[i]))[[1]]
+    colm <- (data %>% dplyr::select(colnames(data)[i]))[[1]]
     if (class(colm) == "integer" || class(colm) == "numeric"){
       q <- quantile(colm, c(0.01, 0.99))
       norm.factors[[i]] <- c(q[1][[1]],q[2][[1]]) # Divide each term in Gower by M_j-m_j, but with 0.99 and 0.01 quantiles respectively!
@@ -364,4 +365,4 @@ write.csv(exp_MCCE, file = paste("results/resulting_metrics_", filename_generati
 save(final_counterfactuals, file = paste("results/final_counterfactuals_", filename_generation, ".RData", sep = ""))
 
 # After generation is done, make latex tables I can paste into report. 
-knitr::kable(exp_MCCE, format = "latex", linesep = "", digits = 1, booktabs = T) %>% print()
+knitr::kable(exp_MCCE, format = "latex", linesep = "", digits = 4, booktabs = T) %>% print()

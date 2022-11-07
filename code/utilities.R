@@ -224,7 +224,7 @@ gower_D_h <- function(x_h, D_h, norm.factors){
     for (i in 1:nrow(D_h)){
       g <- 0 # Sum for Gower distance.
       p <- ncol(x_h)
-      
+  
       for (j in 1:p){ 
         d_j <- D_h[i,j]
         if (dtypes[j] == "integer" || dtypes[j] == "numeric"){ # If we normalize we need to have "numeric" here.
