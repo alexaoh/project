@@ -28,8 +28,6 @@ for (i in CLI.args){
 } # We do not really use all these parameters, but we add them here for "resemblance" with exp3 and exp4. 
   # Should make the code more general (all of it) if time before delivery. 
 
-CLI.args <- c("ANN",10,100,TRUE,TRUE) # REMOVE THIS AFTER DONE WITH TESTING!!!!
-
 # Parameter for choosing standardscaler or not. 
 standardscaler = T
 
@@ -505,7 +503,7 @@ generate_one_counterfactual_all_points <- function(D_h_pp){
 }
 
 
-final_counterfactuals <- generate_one_counterfactual_all_points(D_h_post_processed)
+final_counterfactuals_exp5 <- generate_one_counterfactual_all_points(D_h_post_processed)
 
 ########################### Performance metrics. All these should be calculated on "final_counterfactuals"!
 # Violation: Number of actionability constraints violated by the counterfactual. 
@@ -531,9 +529,9 @@ violate <- function(){
 
 L0s <- c()
 L2s <- c()
-N_CEs <- rep(NA, length(final_counterfactuals))
-for (i in 1:length(final_counterfactuals)){
-  l <- final_counterfactuals[[i]]
+N_CEs <- rep(NA, length(final_counterfactuals_exp5))
+for (i in 1:length(final_counterfactuals_exp5)){
+  l <- final_counterfactuals_exp5[[i]]
   n <- nrow(l)
   N_CEs[i] <- n
   if (n >= 0){
@@ -545,7 +543,7 @@ for (i in 1:length(final_counterfactuals)){
 exp_MCCE <- data.frame("L0" = mean(L0s), "L2" = mean(L2s), "N_CE" = sum(N_CEs))
 knitr::kable(exp_MCCE)
 write.csv(exp_MCCE, file = paste("resultsVAE/resulting_metrics_", filename_generation, ".csv", sep = ""))
-save(final_counterfactuals, file = paste("resultsVAE/final_counterfactuals_", filename_generation, ".RData", sep = ""))
+save(final_counterfactuals_exp5, file = paste("resultsVAE/final_counterfactuals_", filename_generation, ".RData", sep = ""))
 
 # After generation is done, make latex tables I can paste into report. 
 knitr::kable(exp_MCCE, format = "latex", linesep = "", digits = 4, booktabs = T) %>% print()
