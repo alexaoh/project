@@ -28,6 +28,9 @@ for (i in CLI.args){
 } # We do not really use all these parameters, but we add them here for "resemblance" with exp3 and exp4. 
   # Should make the code more general (all of it) if time before delivery. 
 
+CLI.args <- c("ANN",100,10000,"TRUE","FALSE") # For continuous data. 
+# Klarer ikke å behandleK = 100000 punkter i minnet tror jeg!
+
 # Parameter for choosing standardscaler or not. 
 standardscaler = T
 
@@ -251,8 +254,8 @@ plot(history)
 
 ##############################Step 2: Make some counterfactuals for the same Hs as in experiment 3/4.
 # Below we load the Hs from experiment 3 or 4 (for binarized or categorical data respectively).
-filename_generation <- paste(CLI.args[1],"_H",CLI.args[2],"_K",CLI.args[3],"_bin",CLI.args[5], sep="") 
-load(paste("results/Hs/H_",filename_generation,".RData",sep=""), verbose = T)
+filename_generation1 <- paste(CLI.args[1],"_H",CLI.args[2],"_K10000_bin",CLI.args[5], sep="") 
+load(paste("results/Hs/H_",filename_generation1,".RData",sep=""), verbose = T)
 
 generation_method <- 4 # Choose the method for generation, corresponding to the numbering in the report. 
 K <- as.numeric(CLI.args[3]) # Choose the size of the sample from the VAE per factual. 
@@ -379,6 +382,8 @@ generate_counterfactuals_for_Hs <- function(method, K){
 }
 
 D_h_per_point <- generate_counterfactuals_for_Hs(generation_method, K)
+filename_generation2 <- paste(CLI.args[1],"_H",CLI.args[2],"_K",CLI.args[3],"_bin",CLI.args[5], sep="") 
+save(D_h_per_point, file = paste("results/D_hs/",filename_generation2,".RData",sep="")) # Save the generated D_hs. 
 
 ############################### Post-processing (inspired by Experiment 3/4).
 # We do the same steps as in those experiments, with some added (because of the VAE instead of the trees. )
@@ -472,6 +477,7 @@ post.processing <- function(D_h, H, data){ # 'data' is used to calculate normali
 
 D_h_post_processed <- post.processing(D_h_per_point, H, adult.data[,-14])
 
+
 ############ Do we want several counterfactuals per factual or only one? Below we select one!
 generate_one_counterfactual_D_h <- function(D_h){
   # Generate one counterfactual for one factual, i.e. reduce the corresponding D_h to 1 row.
@@ -503,7 +509,7 @@ generate_one_counterfactual_all_points <- function(D_h_pp){
 }
 
 
-final_counterfactuals_exp5 <- generate_one_counterfactual_all_points(D_h_post_processed)
+final_counterfactuals_exp6 <- generate_one_counterfactual_all_points(D_h_post_processed)
 
 ########################### Performance metrics. All these should be calculated on "final_counterfactuals"!
 # Violation: Number of actionability constraints violated by the counterfactual. 
@@ -529,9 +535,9 @@ violate <- function(){
 
 L0s <- c()
 L2s <- c()
-N_CEs <- rep(NA, length(final_counterfactuals_exp5))
-for (i in 1:length(final_counterfactuals_exp5)){
-  l <- final_counterfactuals_exp5[[i]]
+N_CEs <- rep(NA, length(final_counterfactuals_exp6))
+for (i in 1:length(final_counterfactuals_exp6)){
+  l <- final_counterfactuals_exp6[[i]]
   n <- nrow(l)
   N_CEs[i] <- n
   if (n >= 0){
@@ -542,8 +548,8 @@ for (i in 1:length(final_counterfactuals_exp5)){
 
 exp_MCCE <- data.frame("L0" = mean(L0s), "L2" = mean(L2s), "N_CE" = sum(N_CEs))
 knitr::kable(exp_MCCE)
-write.csv(exp_MCCE, file = paste("resultsVAE/resulting_metrics_", filename_generation, ".csv", sep = ""))
-save(final_counterfactuals_exp5, file = paste("resultsVAE/final_counterfactuals_", filename_generation, ".RData", sep = ""))
+write.csv(exp_MCCE, file = paste("resultsVAE/resulting_metrics_", filename_generation2, ".csv", sep = ""))
+save(final_counterfactuals_exp6, file = paste("resultsVAE/final_counterfactuals_", filename_generation2, ".RData", sep = ""))
 
 # After generation is done, make latex tables I can paste into report. 
 knitr::kable(exp_MCCE, format = "latex", linesep = "", digits = 4, booktabs = T) %>% print()
