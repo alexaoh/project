@@ -29,7 +29,7 @@ for (i in CLI.args){
   # Should make the code more general (all of it) if time before delivery. 
 
 CLI.args <- c("ANN",100,10000,"TRUE","FALSE") # For continuous data. 
-# Klarer ikke å behandleK = 100000 punkter i minnet tror jeg!
+# K = 1000000 punkter tar veldig lang tid i minnet.
 
 # Parameter for choosing standardscaler or not. 
 standardscaler = T
