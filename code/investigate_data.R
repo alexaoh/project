@@ -45,11 +45,13 @@ knitr::kable(c,format = "latex", linesep = "", digits = 3, booktabs = T) %>% pri
 # Make histograms for categorical features.
 
 make_hist <- function(variable){
-  plt <- adult.data[,categ] %>% ggplot() +
-    geom_bar(aes(x = .data[[variable]], y = (..count..)/sum(..count..)), stat = "count") +
+  d <- data.frame(table(adult.data[variable])) %>% mutate(ratio = round(Freq/(nrow(adult.data)),3))
+  plt <- d %>% ggplot(aes(x = Var1, y = ratio)) +
+    geom_col() +
     theme_minimal() +
     ylab("Percentage") +
-    scale_y_continuous(labels = percent, limits = c(0,1)) 
+    scale_y_continuous(labels = percent, limits = c(0,1)) +
+    geom_text(aes(label = ratio), vjust = -1)
     ggsave(paste0("plots/adult_data_hist_",variable,".pdf"), width = 9, height = 5)
   return(plt)
 }
