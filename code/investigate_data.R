@@ -8,8 +8,8 @@ library(scales)
 setwd("/home/ajo/gitRepos/project")
 
 # Original data. 
-load("data/adult_data_categ.RData", verbose = T) 
 load("data/adult_data_binarized.RData", verbose = T)
+load("data/adult_data_categ.RData", verbose = T) 
 
 # Data from experiment 1. 
 load("unconditional_generated_trees_bin.RData", verbose = T)
@@ -69,16 +69,20 @@ for (n in categ){
 make_cross_correlation <- function(data,first.feat, second.feat){
   # Make cross-correlation table between two features of the same data set.
   tab <- table(data[,first.feat], 
-               data[,second.feat])/sum(table(adult.data[,first.feat], 
-                                                           adult.data[,second.feat]))
+               data[,second.feat])
+  tab <- t(apply(as.matrix(tab),1, function(x) x/sum(x)))
   return(tab)  
 }
-(tab <- make_cross_correlation(adult.data, "sex","native_country"))
-knitr::kable(tab,format = "latex", linesep = "", digits = 3, booktabs = T) %>% print()
+#(tab <- make_cross_correlation(adult.data, "sex","native_country"))
+#knitr::kable(tab,format = "latex", linesep = "", digits = 3, booktabs = T) %>% print()
 (tab <- make_cross_correlation(adult.data, "sex","workclass"))
 knitr::kable(tab,format = "latex", linesep = "", digits = 3, booktabs = T) %>% print()
 (tab <- make_cross_correlation(adult.data, "sex","race"))
 knitr::kable(tab,format = "latex", linesep = "", digits = 3, booktabs = T) %>% print()
+(tab <- make_cross_correlation(adult.data, "sex","relationship"))
+knitr::kable(tab,format = "latex", linesep = "", digits = 3, booktabs = T) %>% print()
+#(tab <- make_cross_correlation(adult.data, "sex","marital_status"))
+#knitr::kable(tab,format = "latex", linesep = "", digits = 3, booktabs = T) %>% print()
 
 ##### Make ggplots for comparisons. 
 make_qqplot <- function(OG.data, gen.data, feature, exp.num){
@@ -114,5 +118,3 @@ for (n in cont){
   make_qqplot(adult.data, D2, n,"exp1") # Need to change the second data set and the last name in order 
                                         # to make the qqplots for different experiments. 
 }
-
-
