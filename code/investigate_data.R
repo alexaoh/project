@@ -1,5 +1,6 @@
 # We try to make some interesting plots concerning the data.
 library(ggplot2)
+library(ggmosaic)
 library(dplyr)
 library(tidyr)
 library(GGally)
@@ -23,16 +24,16 @@ categ <- categ[-length(categ)] # Remove the label "y"!
 summary(adult.data[,cont])
 
 # Make densities for each variable. 
-make_dens <- function(variable){
-  plt <- adult.data[,cont] %>% ggplot() +
+make_dens <- function(variable, data){
+  plt <- data[,cont] %>% ggplot() +
     geom_density(aes(x = .data[[variable]])) +
     theme_minimal() 
-  ggsave(paste0("plots/adult_data_dens_",variable,".pdf"), width = 9, height = 5)
+  ggsave(paste0("plots/exp1_dens_cat_",variable,".pdf"), width = 9, height = 5)
   return(plt)
 }
 
 for (n in cont){
-  make_dens(n) # We simply make the grid in latex instead!
+  make_dens(n, D2) # We simply make the grid in latex instead!
 }
 
 # Get correlations of the continuous variables. 
@@ -48,21 +49,21 @@ knitr::kable(c,format = "latex", linesep = "", digits = 3, booktabs = T) %>% pri
 #dev.off()
 
 # Make histograms for categorical features.
-
-make_hist <- function(variable){
-  d <- data.frame(table(adult.data[variable])) %>% mutate(ratio = round(Freq/(nrow(adult.data)),3))
+make_hist <- function(variable, data){
+  d <- data.frame(table(data[variable])) %>% mutate(ratio = round(Freq/(nrow(data)),3))
   plt <- d %>% ggplot(aes(x = Var1, y = ratio)) +
     geom_col() +
     theme_minimal() +
     ylab("Percentage") +
+    xlab(variable) +
     scale_y_continuous(labels = percent, limits = c(0,1)) +
     geom_text(aes(label = ratio), vjust = -1)
-    ggsave(paste0("plots/adult_data_hist_",variable,".pdf"), width = 9, height = 5)
+    ggsave(paste0("plots/adult_data_hist_cat_",variable,".pdf"), width = 9, height = 5)
   return(plt)
 }
 
 for (n in categ){
-  make_hist(n)
+  make_hist(n,adult.data)
 }
 
 ##### Make cross-correlation tables between select categorical variables. 
@@ -70,13 +71,14 @@ make_cross_correlation <- function(data,first.feat, second.feat){
   # Make cross-correlation table between two features of the same data set.
   tab <- table(data[,first.feat], 
                data[,second.feat])
-  tab <- t(apply(as.matrix(tab),1, function(x) x/sum(x)))
+  tab <- addmargins(tab)
   return(tab)  
 }
 #(tab <- make_cross_correlation(adult.data, "sex","native_country"))
 #knitr::kable(tab,format = "latex", linesep = "", digits = 3, booktabs = T) %>% print()
 (tab <- make_cross_correlation(adult.data, "sex","workclass"))
 knitr::kable(tab,format = "latex", linesep = "", digits = 3, booktabs = T) %>% print()
+mosaicplot(tab, main = "")
 (tab <- make_cross_correlation(adult.data, "sex","race"))
 knitr::kable(tab,format = "latex", linesep = "", digits = 3, booktabs = T) %>% print()
 (tab <- make_cross_correlation(adult.data, "sex","relationship"))
@@ -84,7 +86,24 @@ knitr::kable(tab,format = "latex", linesep = "", digits = 3, booktabs = T) %>% p
 #(tab <- make_cross_correlation(adult.data, "sex","marital_status"))
 #knitr::kable(tab,format = "latex", linesep = "", digits = 3, booktabs = T) %>% print()
 
-##### Make ggplots for comparisons. 
+# Make mosaic plot instead of two-way tables, perhaps more informative.
+make_mosaic_plot <- function(data, first.feat, second.feat, exp.num, vers.num){
+  plt <- data[,categ] %>% ggplot() +
+    geom_mosaic(aes(x = product(.data[[first.feat]]), fill = .data[[second.feat]])) +
+    theme_minimal() +
+    scale_fill_grey()
+  ggsave(paste0("plots/mosaic/",exp.num,"_",first.feat,"_",second.feat,"_",vers.num,".pdf"), width = 9, height = 5)
+  return(plt) # Not sure why this shit is not working!!?!?!??
+}
+
+print(make_mosaic_plot(adult.data,"sex","race","adult_data","bin"))
+plt <- data %>% ggplot() +
+  geom_mosaic(mapping = aes(x = product(sex), fill = race)) +
+  theme_minimal() +
+  scale_fill_grey()
+print(plt)
+
+#### Make ggplots for comparisons.
 make_qqplot <- function(OG.data, gen.data, feature, exp.num){
   # Make qq-plots between generated data and original data. 
   # Always assume that the generated data set is larger (which is it in our experiments).
@@ -109,7 +128,7 @@ make_qqplot <- function(OG.data, gen.data, feature, exp.num){
     xlab(paste0("Adult ", feature, " quantiles")) +
     theme_minimal() +
     geom_abline(intercept = 0, slope = 1, colour = "black", linetype = "solid")
-  ggsave(paste0("plots/qq/",exp.num,"_",feature,".pdf"), width = 9, height = 5)
+  ggsave(paste0("plots/qq/",exp.num,"_",feature,"_cat",".pdf"), width = 9, height = 5)
   return(plt)
 }
 
