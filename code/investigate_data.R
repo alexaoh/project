@@ -16,6 +16,12 @@ load("data/adult_data_categ.RData", verbose = T)
 load("unconditional_generated_trees_bin.RData", verbose = T)
 load("unconditional_generated_trees_cat.RData", verbose = T)
 
+# Data from experiment 2. 
+# This data is simply loaded into R session after training the VAE. 
+
+# Data from experiment 3. 
+
+
 cont <- c("age","fnlwgt","education_num","capital_gain","capital_loss","hours_per_week")
 # List of categorical variables (used to reverse onehot encode later!)
 categ <- setdiff(names(adult.data), cont)
@@ -24,16 +30,16 @@ categ <- categ[-length(categ)] # Remove the label "y"!
 summary(adult.data[,cont])
 
 # Make densities for each variable. 
-make_dens <- function(variable, data){
+make_dens <- function(variable, data, save){
   plt <- data[,cont] %>% ggplot() +
     geom_density(aes(x = .data[[variable]])) +
     theme_minimal() 
-  ggsave(paste0("plots/exp1_dens_cat_",variable,".pdf"), width = 9, height = 5)
+  if (save){ggsave(paste0("plots/exp1_dens_cat_",variable,".pdf"), width = 9, height = 5)}
   return(plt)
 }
 
 for (n in cont){
-  make_dens(n, D2) # We simply make the grid in latex instead!
+  plot(make_dens(n, decoded_data_rand,F)) # We simply make the grid in latex instead!
 }
 
 # Get correlations of the continuous variables. 
@@ -49,7 +55,7 @@ knitr::kable(c,format = "latex", linesep = "", digits = 3, booktabs = T) %>% pri
 #dev.off()
 
 # Make histograms for categorical features.
-make_hist <- function(variable, data){
+make_hist <- function(variable, data, save){
   d <- data.frame(table(data[variable])) %>% mutate(ratio = round(Freq/(nrow(data)),3))
   plt <- d %>% ggplot(aes(x = Var1, y = ratio)) +
     geom_col() +
@@ -58,12 +64,12 @@ make_hist <- function(variable, data){
     xlab(variable) +
     scale_y_continuous(labels = percent, limits = c(0,1)) +
     geom_text(aes(label = ratio), vjust = -1)
-    ggsave(paste0("plots/adult_data_hist_cat_",variable,".pdf"), width = 9, height = 5)
+    if (save) {ggsave(paste0("plots/adult_data_hist_cat_",variable,".pdf"), width = 9, height = 5)}
   return(plt)
 }
 
 for (n in categ){
-  make_hist(n,adult.data)
+  plot(make_hist(n,decoded_data_rand, F))
 }
 
 ##### Make cross-correlation tables between select categorical variables. 
@@ -96,12 +102,15 @@ make_mosaic_plot <- function(data, first.feat, second.feat, exp.num, vers.num){
   return(plt) # Not sure why this shit is not working!!?!?!??
 }
 
-print(make_mosaic_plot(adult.data,"sex","race","adult_data","bin"))
-plt <- data %>% ggplot() +
-  geom_mosaic(mapping = aes(x = product(sex), fill = race)) +
+#print(make_mosaic_plot(adult.data,"sex","race","adult_data","bin"))
+
+# I guess I will do it manually instead then!
+plt <- D2 %>% ggplot() +
+  geom_mosaic(mapping = aes(x = product(race), fill = workclass)) +
   theme_minimal() +
   scale_fill_grey()
 print(plt)
+ggsave("plots/mosaic/exp1_cat_race_workclass_cat.pdf", width = 9, height = 5)
 
 #### Make ggplots for comparisons.
 make_qqplot <- function(OG.data, gen.data, feature, exp.num){
