@@ -30,16 +30,28 @@ categ <- categ[-length(categ)] # Remove the label "y"!
 summary(adult.data[,cont])
 
 # Make densities for each variable. 
-make_dens <- function(variable, data, save){
+make_dens <- function(variable, data, save, limits){
   plt <- data[,cont] %>% ggplot() +
     geom_density(aes(x = .data[[variable]])) +
-    theme_minimal() 
+    theme_minimal() + 
+    scale_x_continuous(limits = limits)
+    
   if (save){ggsave(paste0("plots/exp1_dens_cat_",variable,".pdf"), width = 9, height = 5)}
   return(plt)
 }
 
-for (n in cont){
-  plot(make_dens(n, decoded_data_rand,F)) # We simply make the grid in latex instead!
+# Should set the x-axis to the same values for each continuous variable in each experiment!!
+limits <- list(
+  c(-1,100),
+  c(-1,600000),
+  c(-1,20),
+  c(-1,10000),
+  c(-1,1000),
+  c(-1,100)
+)
+
+for (i in 1:length(cont)){
+  plot(make_dens(cont[i], D2,F, limits[[i]])) # We simply make the grid in latex instead!
 }
 
 # Get correlations of the continuous variables. 

@@ -135,10 +135,11 @@ summary(vae)
 vae_loss <- function(enc_mean, enc_log_var){
   # Loss function for our VAE (with Gaussian assumptions).
   vae_reconstruction_loss <- function(y_true, y_predict){
-    loss_factor <- 1000 # Give weight to the reconstruction in the loss function ("hyperparameter")
+    loss_factor <- 1 # Give weight to the reconstruction in the loss function ("hyperparameter")
     #reconstruction_loss <- loss_mean_squared_error(y_true, y_predict) 
     #reconstruction_loss <- loss_binary_crossentropy(y_true, y_predict) # Or binary cross entropy?
     #reconstruction_loss <- k_mean(k_square(y_true - y_predict))
+    reconstruction_loss <- k_sum(k_square(y_true - y_predict))
     # Tror jeg antar Gaussian output når jeg bruker mean squarederror som reconstruction loss!!!!!
     # https://stats.stackexchange.com/questions/464875/mean-square-error-as-reconstruction-loss-in-vae
     
@@ -157,7 +158,7 @@ vae_loss <- function(enc_mean, enc_log_var){
     # Her må man finne ut hvordan man vil vekte faktorene vs de numeriske kovariatene!
     # Hvilken blir størst i loss-funksjonen totalt sett? ANER IKKE!
     
-    reconstruction_loss <- k_mean(k_square(y_true - y_predict)) + metric_categorical_crossentropy(y_true, y_predict)
+    #reconstruction_loss <- k_mean(k_square(y_true - y_predict)) + metric_categorical_crossentropy(y_true, y_predict)
     
     # https://datascience.stackexchange.com/questions/28440/custom-conditional-loss-function-in-keras
     
