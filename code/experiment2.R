@@ -92,7 +92,7 @@ x_test <- test[,-which(names(test) == "y")]
 
 ############################ Build the VAE. 
 # Build the VAE.
-latent_dim <- 8L # This sets the size of the latent representation (vector), 
+latent_dim <- 2L # This sets the size of the latent representation (vector), 
 intermediate_dim <- 15L
 # defined by the parameters z_mean and z_log_var. 
 input_size <- ncol(x_train) 
@@ -123,22 +123,29 @@ z <- list(enc_mean, enc_log_var) %>%
 
 #latent_inputs <- layer_input(shape = c(latent_dim), name = "dec_input")
 decoder_layer <- layer_dense(units = intermediate_dim, activation = "relu", name = "dec_hidden")
-outputs <- layer_dense(units = input_size, name = "dec_output") 
+outputs1 <- layer_dense(units = 6, name = "dec_output_cat") 
+outputs2 <- layer_dense(units = ncol(x_test)-6, activation = "sigmoid", name = "dec_output_num")
+outputs <- layer_dense(units = input_size, name = "dec_output")
 # Could perhaps use the sigmoid activation to restrict data to (0,1) since we are dealing with normalized input data. 
 # outputs <- layer_dense(decoder_layer, input_size) # We test this here.  
 
 vae_encoder_output <- decoder_layer(z)
 vae_decoder_output <- outputs(vae_encoder_output)
-vae <- keras_model(enc_input, vae_decoder_output, name = "VAE")
+vae_decoder_output_num <- outputs1(vae_encoder_output)
+vae_decoder_output_cat <- outputs2(vae_encoder_output)
+#vae <- keras_model(enc_input, vae_decoder_output, name = "VAE")
+vae <- keras_model(enc_input, c(vae_decoder_output_num, vae_decoder_output_cat), name = "VAE")
 summary(vae)
 
 vae_loss <- function(enc_mean, enc_log_var){
   # Loss function for our VAE (with Gaussian assumptions).
   vae_reconstruction_loss <- function(y_true, y_predict){
-    loss_factor <- 1000 # Give weight to the reconstruction in the loss function ("hyperparameter")
+    loss_factor <- 100 # Give weight to the reconstruction in the loss function ("hyperparameter")
     #reconstruction_loss <- loss_mean_squared_error(y_true, y_predict) 
     #reconstruction_loss <- loss_binary_crossentropy(y_true, y_predict) # Or binary cross entropy?
+    #reconstruction_loss <- loss_categorical_crossentropy(y_true, y_predict) # Or binary cross entropy?
     #reconstruction_loss <- k_mean(k_square(y_true - y_predict))
+    #reconstruction_loss <- k_sum(k_square(y_true - y_predict))
     # Tror jeg antar Gaussian output når jeg bruker mean squarederror som reconstruction loss!!!!!
     # https://stats.stackexchange.com/questions/464875/mean-square-error-as-reconstruction-loss-in-vae
     
@@ -157,13 +164,18 @@ vae_loss <- function(enc_mean, enc_log_var){
     # Her må man finne ut hvordan man vil vekte faktorene vs de numeriske kovariatene!
     # Hvilken blir størst i loss-funksjonen totalt sett? ANER IKKE!
     
-    reconstruction_loss <- k_mean(k_square(y_true - y_predict)) + metric_categorical_crossentropy(y_true, y_predict)
+    #reconstruction_loss <- k_mean(k_square(y_true - y_predict)) + metric_categorical_crossentropy(y_true, y_predict)
+    
+    #reconstrunction_loss <- k_sum(loss_binary_crossentropy(y_true[,7:20], y_predict[,7:20]), 
+    #                              loss_mean_squared_error(y_true[,1:6], y_predict[,1:6]))
+    
+    # Try to assume Normality of the numerical features and binary classification of the categorical features.
+    reconstruction_loss <- loss_mean_squared_error(y_true[[1]], y_predict[1,])*(1/6) +
+      loss_binary_crossentropy(y_true[[2]], y_predict[2,])*(1/(ncol(x_train)-6))*1000
     
     # https://datascience.stackexchange.com/questions/28440/custom-conditional-loss-function-in-keras
     
-    # reconstruction_loss <- function(y_true, y_predict){
-    #   l <-
-    # }
+    
     
     return(reconstruction_loss*loss_factor)
   }
@@ -197,8 +209,9 @@ summary(encoder)
 # Define decoder. 
 decoder_input <- layer_input(shape = latent_dim)
 decoder_hidden <- decoder_layer(decoder_input)
-decoder_output <- outputs(decoder_hidden)
-decoder <- keras_model(decoder_input, decoder_output, name = "decoder_model")
+decoder_output_num <- outputs1(decoder_hidden)
+decoder_output_cat <- outputs2(decoder_hidden)
+decoder <- keras_model(decoder_input, c(decoder_output_num, decoder_output_cat), name = "decoder_model")
 summary(decoder)
 
 
@@ -209,7 +222,7 @@ summary(vae)
 callbacks_list <- list(
   callback_early_stopping(
     monitor = "val_loss",
-    patience=3
+    patience=5
   ),
   callback_reduce_lr_on_plateau(
     monitor="val_loss",
@@ -221,11 +234,12 @@ callbacks_list <- list(
 # Training/fitting the model.
 history <- vae %>% fit(
   x = data.matrix(x_train),
-  y = data.matrix(x_train),
+  y = list(data.matrix(x_train[,1:6]), data.matrix(x_train[,7:ncol(x_train)])),
   shuffle = T,
   epochs = 30,
   batch_size = 16,
-  validation_data = list(data.matrix(x_test), data.matrix(x_test)), # We do not use validation sets now, use test as validation. 
+  validation_data = list(data.matrix(x_test), 
+                         list(data.matrix(x_test[,1:6]), data.matrix(x_test[,7:ncol(x_test)]))), # We do not use validation sets now, use test as validation. 
   verbose = 1,
   callbacks = callbacks_list
 )
@@ -233,7 +247,7 @@ history <- vae %>% fit(
 plot(history)
 
 ############################ Make some synthetic data!
-generation_method <- 4
+generation_method <- 1
 K <- 1e5L
 #K <- 3*nrow(x_train)
 
