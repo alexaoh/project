@@ -11,6 +11,7 @@ library(keras)
 library(caret)
 library(dplyr)
 library(MASS)
+library(kableExtra)
 source("code/utilities.R")
 
 set.seed(1234)
@@ -19,8 +20,8 @@ set.seed(1234)
 standardscaler <- T
 
 # We load the data (binarized or categorical).
-load("data/adult_data_binarized.RData", verbose = T)
-#load("data/adult_data_categ.RData", verbose = T)
+#load("data/adult_data_binarized.RData", verbose = T)
+load("data/adult_data_categ.RData", verbose = T)
 
 # List of continuous variables.
 cont <- c("age","fnlwgt","education_num","capital_gain","capital_loss","hours_per_week")
@@ -182,15 +183,6 @@ vae_loss <- function(enc_mean, enc_log_var){
   return(v_loss)
 }
 
-
-# vae_loss <- function(y_true, y_pred){
-#   xent_loss=1.0*loss_mean_squared_error(y_true, y_pred) # Prøver med mean squared error eller kullback leibler.
-#   #xent_loss=(input_size/1.0)*loss_mean_squared_error(input, z_decoded_mean)
-#   #xent_loss=(input_size/1.0)*loss_kullback_leibler_divergence(input, z_decoded_mean)
-#   kl_loss=-0.5*k_mean(1+enc_log_var-k_square(enc_mean)-k_exp(enc_log_var), axis=-1L)
-#   return(xent_loss + kl_loss)
-# }
-
 # Define encoder. 
 encoder <- keras_model(enc_input, list(enc_mean, enc_log_var, z), name = "encoder_model") 
 summary(encoder)
@@ -313,21 +305,51 @@ head(decoded_data_rand)
 # Revert the one hot encoding
 decoded_data_rand <- reverse.onehot.encoding(decoded_data_rand, cont, categ, has.label = F)
 
-# Change the names of the categorical values in the decoded data. 
-decoded_data_rand$workclass[decoded_data_rand$workclass == "workclass..Private"] <- " Private"
-decoded_data_rand$workclass[decoded_data_rand$workclass == "workclass..Other"] <- " Other"
-decoded_data_rand$marital_status[decoded_data_rand$marital_status == "marital_status..Other"] <- " Other"
-decoded_data_rand$marital_status[decoded_data_rand$marital_status == "marital_status..Married.civ.spouse"] <- " Married-civ-spouse"
-decoded_data_rand$occupation[decoded_data_rand$occupation == "occupation..Other"] <- " Other"
-decoded_data_rand$occupation[decoded_data_rand$occupation == "occupation..Craft.repair"] <- " Craft-repair"
-decoded_data_rand$relationship[decoded_data_rand$relationship == "relationship..Husband"] <- " Husband"
-decoded_data_rand$relationship[decoded_data_rand$relationship == "relationship..Other"] <- " Other"
-decoded_data_rand$race[decoded_data_rand$race == "race..Other"] <- " Other"
-decoded_data_rand$race[decoded_data_rand$race == "race..White"] <- " White"
-decoded_data_rand$native_country[decoded_data_rand$native_country == "native_country..Other"] <- " Other"
-decoded_data_rand$native_country[decoded_data_rand$native_country == "native_country..United.States"] <- " United-States"
-decoded_data_rand$sex[decoded_data_rand$sex == "sex..Male"] <- " Male"
-decoded_data_rand$sex[decoded_data_rand$sex == "sex..Female"] <- " Female"
+change_names <- function(decoded_data_rand){
+  # Change the names of the categorical values in the decoded data. 
+  decoded_data_rand$workclass[decoded_data_rand$workclass == "workclass..Private"] <- " Private"
+  decoded_data_rand$workclass[decoded_data_rand$workclass == "workclass..Other"] <- " Other"
+  decoded_data_rand$workclass[decoded_data_rand$workclass == "workclass..Local.gov"] <- " Local-gov"
+  decoded_data_rand$workclass[decoded_data_rand$workclass == "workclass..Self.emp.inc"] <- " Self-emp-inc"
+  decoded_data_rand$workclass[decoded_data_rand$workclass == "workclass..Self.emp.not.inc"] <- " Self-emp-not-inc"
+  decoded_data_rand$workclass[decoded_data_rand$workclass == "workclass..State.gov"] <- " State-gov"
+  decoded_data_rand$workclass[decoded_data_rand$workclass == "workclass..Without.pay"] <- " Without-pay"
+  decoded_data_rand$marital_status[decoded_data_rand$marital_status == "marital_status..Other"] <- " Other"
+  decoded_data_rand$marital_status[decoded_data_rand$marital_status == "marital_status..Married.civ.spouse"] <- " Married-civ-spouse"
+  decoded_data_rand$marital_status[decoded_data_rand$marital_status == "marital_status..Divorced"] <- " Divorced"
+  decoded_data_rand$marital_status[decoded_data_rand$marital_status == "marital_status..Never.married"] <- " Never-married"
+  decoded_data_rand$marital_status[decoded_data_rand$marital_status == "marital_status..Widowed"] <- " Widowed"
+  decoded_data_rand$marital_status[decoded_data_rand$marital_status == "marital_status..Separated"] <- " Separated"
+  decoded_data_rand$occupation[decoded_data_rand$occupation == "occupation..Other"] <- " Other"
+  decoded_data_rand$occupation[decoded_data_rand$occupation == "occupation..Craft.repair"] <- " Craft-repair"
+  decoded_data_rand$occupation[decoded_data_rand$occupation == "occupation..Adm.clerical"] <- " Adm-clerical"
+  decoded_data_rand$occupation[decoded_data_rand$occupation == "occupation..Exec.managerial"] <- " Exec-managerial"
+  decoded_data_rand$occupation[decoded_data_rand$occupation == "occupation..Farming.fishing"] <- " Farming-fishing"
+  decoded_data_rand$occupation[decoded_data_rand$occupation == "occupation..Machine.op.inspct"] <- " Machine-op-inspct"
+  decoded_data_rand$occupation[decoded_data_rand$occupation == "occupation..Transport.moving"] <- " Transport-moving"
+  decoded_data_rand$occupation[decoded_data_rand$occupation == "occupation..Other.service"] <- " Other-service"
+  decoded_data_rand$occupation[decoded_data_rand$occupation == "occupation..Prof.specialty"] <- " Prof-specialty"
+  decoded_data_rand$occupation[decoded_data_rand$occupation == "occupation..Sales"] <- " Sales"
+  decoded_data_rand$relationship[decoded_data_rand$relationship == "relationship..Husband"] <- " Husband"
+  decoded_data_rand$relationship[decoded_data_rand$relationship == "relationship..Other"] <- " Other"
+  decoded_data_rand$relationship[decoded_data_rand$relationship == "relationship..Not.in.family"] <- " Not-in-family"
+  decoded_data_rand$relationship[decoded_data_rand$relationship == "relationship..Own.child"] <- " Own-child"
+  decoded_data_rand$relationship[decoded_data_rand$relationship == "relationship..Unmarried"] <- " Unmarried"
+  decoded_data_rand$relationship[decoded_data_rand$relationship == "relationship..Wife"] <- " Wife"
+  decoded_data_rand$race[decoded_data_rand$race == "race..Other"] <- " Other"
+  decoded_data_rand$race[decoded_data_rand$race == "race..White"] <- " White"
+  decoded_data_rand$race[decoded_data_rand$race == "race..Black"] <- " Black"
+  decoded_data_rand$race[decoded_data_rand$race == "race..Amer.Indian.Eskimo"] <- " Amer-Indian-Eskimo"
+  decoded_data_rand$race[decoded_data_rand$race == "race..Asian.Pac.Islander"] <- " Asian-Pac-Islander"
+  decoded_data_rand$native_country[decoded_data_rand$native_country == "native_country..Other"] <- " Other"
+  decoded_data_rand$native_country[decoded_data_rand$native_country == "native_country..United.States"] <- " United-States"
+  decoded_data_rand$native_country[decoded_data_rand$native_country == "native_country..Mexico"] <- " Mexico"
+  decoded_data_rand$sex[decoded_data_rand$sex == "sex..Male"] <- " Male"
+  decoded_data_rand$sex[decoded_data_rand$sex == "sex..Female"] <- " Female"
+  return(decoded_data_rand)
+}
+
+decoded_data_rand <- change_names(decoded_data_rand)
 
 # De-normalize the generated data, such that it is on the same scale as the adult data. 
 if (standardscaler){
@@ -400,8 +422,15 @@ cont.summary <- function(data){
   summary
 }
 
-knitr::kable(cont.summary(adult.data), format = "latex", linesep = "", digits = 1, booktabs = T) %>% print()
-knitr::kable(cont.summary(decoded_data_rand), format = "latex", linesep = "", digits = 1, booktabs = T) %>% print()
+kbl(cont.summary(adult.data), format = "latex", linesep = "", digits = 1, booktabs = T) %>% 
+  kable_styling(latex_options = c("scale_down")) %>% 
+  column_spec(1, monospace = T) %>% 
+  print()
+
+kbl(cont.summary(decoded_data_rand), format = "latex", linesep = "", digits = 1, booktabs = T) %>% 
+  kable_styling(latex_options = c("scale_down")) %>% 
+  column_spec(1, monospace = T) %>% 
+  print()
 
 make_ggplot_for_categ <- function(data, filename, save){
   data.categ <- data[,categ]

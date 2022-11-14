@@ -5,6 +5,7 @@ library(dplyr)
 library(tidyr)
 library(GGally)
 library(scales)
+options(knitr.kable.NA = '')
 
 setwd("/home/ajo/gitRepos/project")
 
@@ -36,7 +37,7 @@ make_dens <- function(variable, data, save, limits){
     theme_minimal() + 
     scale_x_continuous(limits = limits)
     
-  if (save){ggsave(paste0("plots/exp1_dens_cat_",variable,".pdf"), width = 9, height = 5)}
+  if (save){ggsave(paste0("plots/exp2_dens_cat_",variable,"_alg4.pdf"), width = 9, height = 5)}
   return(plt)
 }
 
@@ -51,13 +52,20 @@ limits <- list(
 )
 
 for (i in 1:length(cont)){
-  plot(make_dens(cont[i], D2,F, limits[[i]])) # We simply make the grid in latex instead!
+  plot(make_dens(cont[i], decoded_data_rand,T, limits[[i]])) # We simply make the grid in latex instead!
 }
 
 # Get correlations of the continuous variables. 
-c <- cor(adult.data[,cont])
-c[lower.tri(c)] <- ""
-knitr::kable(c,format = "latex", linesep = "", digits = 3, booktabs = T) %>% print()
+co <- cor(decoded_data_rand[,cont])
+co[lower.tri(co)] <- NA
+co <- data.frame(co)
+colnames(co) <- c("age", "fnlwgt","ed_num","cap_gain","cap_loss","h_p_week")
+co <- data.matrix(co)
+kbl(co,format = "latex", linesep = "", digits = 3, booktabs = T) %>% 
+  kable_styling(latex_options = c("scale_down")) %>% 
+  column_spec(1, monospace = T) %>% 
+  row_spec(0, monospace = T) %>% 
+  print()
 
 
 # Not feasible because of the size of the plot (in Mb).
@@ -74,14 +82,14 @@ make_hist <- function(variable, data, save){
     theme_minimal() +
     ylab("Percentage") +
     xlab(variable) +
-    scale_y_continuous(labels = percent, limits = c(0,1)) +
+    scale_y_continuous(labels = scales::percent, limits = c(0,1)) +
     geom_text(aes(label = ratio), vjust = -1)
-    if (save) {ggsave(paste0("plots/adult_data_hist_cat_",variable,".pdf"), width = 9, height = 5)}
+    if (save) {ggsave(paste0("plots/exp2_hist_cat_",variable,"_alg4.pdf"), width = 9, height = 5)}
   return(plt)
 }
 
 for (n in categ){
-  plot(make_hist(n,decoded_data_rand, F))
+  plot(make_hist(n,decoded_data_rand, T))
 }
 
 ##### Make cross-correlation tables between select categorical variables. 
@@ -117,25 +125,25 @@ make_mosaic_plot <- function(data, first.feat, second.feat, exp.num, vers.num){
 #print(make_mosaic_plot(adult.data,"sex","race","adult_data","bin"))
 
 # I guess I will do it manually instead then!
-plt <- D2 %>% ggplot() +
-  geom_mosaic(mapping = aes(x = product(race), fill = workclass)) +
+plt <- decoded_data_rand %>% ggplot() +
+  geom_mosaic(mapping = aes(x = product(race), fill = relationship)) +
   theme_minimal() +
   scale_fill_grey()
 print(plt)
-ggsave("plots/mosaic/exp1_cat_race_workclass_cat.pdf", width = 9, height = 5)
+ggsave("plots/mosaic/exp2_race_relationship_cat_alg4.pdf", width = 9, height = 5)
 
 #### Make ggplots for comparisons.
-make_qqplot <- function(OG.data, gen.data, feature, exp.num){
+make_qqplot <- function(OG.data, gen.data, feature, exp.num, save){
   # Make qq-plots between generated data and original data. 
   # Always assume that the generated data set is larger (which is it in our experiments).
 
-  adult <- (OG.data %>% select(feature))[[1]] # This is assumed smaller. 
-  gen <- (gen.data %>% select(feature))[[1]] # This is assumed larger.
+  adult <- (OG.data %>% dplyr::select(feature))[[1]] # This is assumed smaller. 
+  gen <- (gen.data %>% dplyr::select(feature))[[1]] # This is assumed larger.
   
   # When the sizes differ, the function qqplot interpolates between the sorted values of the larger set.
   # That is, we estimate nrow(OG.data) quantiles from nrow(gen.data) by interpolating between the points. 
   # Essentially, the dimension of the largest data set is reduced using linear approximations between the points. 
-  q <- qqplot((adult.data %>% select(feature))[[1]],(D2 %>% select(feature))[[1]], plot.it = F)
+  q <- qqplot((adult.data %>% dplyr::select(feature))[[1]],(gen.data %>% dplyr::select(feature))[[1]], plot.it = F)
   
   # Gives roughly the sames as this:
   #A <- (D2 %>% select(feature))[[1]]
@@ -149,12 +157,14 @@ make_qqplot <- function(OG.data, gen.data, feature, exp.num){
     xlab(paste0("Adult ", feature, " quantiles")) +
     theme_minimal() +
     geom_abline(intercept = 0, slope = 1, colour = "black", linetype = "solid")
-  ggsave(paste0("plots/qq/",exp.num,"_",feature,"_cat",".pdf"), width = 9, height = 5)
+  if (save) {ggsave(paste0("plots/qq/",exp.num,"_",feature,"_cat_alg4",".pdf"), width = 9, height = 5)}
   return(plt)
 }
 
 for (n in cont){
   # Make qqplots for all features in exp1 generated data. 
-  make_qqplot(adult.data, D2, n,"exp1") # Need to change the second data set and the last name in order 
+  make_qqplot(adult.data, decoded_data_rand, n, "exp2", T)
+                                        # Need to change the second data set and the last name in order 
                                         # to make the qqplots for different experiments. 
 }
+
