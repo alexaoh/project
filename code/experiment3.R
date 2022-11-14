@@ -37,7 +37,7 @@ if (CLI.args[5]){
   load("data/adult_data_categ.RData", verbose = T) # Categorical factors as they come originally. 
   ANN <- load_model_hdf5("classifiers/ANN_experiment4.h5") # Load the classifier for step 1. 
   load("data/exp4_data/test_data_exp4_ANN.RData", verbose = T)
-  normalization_constants <- read.csv("data/exp3_data/normalization_constants_exp4.csv")
+  normalization_constants <- read.csv("data/exp4_data/normalization_constants_exp4.csv")
 } else {
   stop("Please supply either T (binarized data) of F (categorical data) as the fit CLI argument.")
 }

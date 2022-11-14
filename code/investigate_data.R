@@ -14,14 +14,11 @@ load("data/adult_data_binarized.RData", verbose = T)
 load("data/adult_data_categ.RData", verbose = T) 
 
 # Data from experiment 1. 
-load("unconditional_generated_trees_bin.RData", verbose = T)
-load("unconditional_generated_trees_cat.RData", verbose = T)
+load("results/unconditional_generated_trees_bin.RData", verbose = T)
+load("results/unconditional_generated_trees_cat.RData", verbose = T)
 
 # Data from experiment 2. 
 # This data is simply loaded into R session after training the VAE. 
-
-# Data from experiment 3. 
-
 
 cont <- c("age","fnlwgt","education_num","capital_gain","capital_loss","hours_per_week")
 # List of categorical variables (used to reverse onehot encode later!)

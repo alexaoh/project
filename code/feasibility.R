@@ -1,3 +1,4 @@
+# This was not used after all. Kept in case I want to implement this later. 
 # Feasibility: distance between the counterfactual and the training data
 # As in the article, we choose Euclidean distance, k = 1/5 and w^[i] = 1/k = 1/5.
 feasibility <- function(){

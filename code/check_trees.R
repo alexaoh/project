@@ -1,6 +1,6 @@
-# We check if the marginal distributions seem to be modelled sufficiently well.
+# We check if the marginal distributions seem to be modeled sufficiently well.
 
-# FIRST WE CHECK THE TREES THAT ARE BUILT FOR THE NORMALIZED TREES!
+# FIRST WE CHECK THE TREES THAT ARE BUILT FOR THE NORMALIZED DATA!
 
 # Need to check the trees for both categorical and binarized data!
 #load("data/adult_data_categ.RData", verbose = T) 
