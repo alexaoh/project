@@ -132,8 +132,10 @@ generate <- function(h, K){ # K = 10000 is used in the article for the experimen
   
   # Fill the matrix D_h with copies of the vectors of fixed features. 
   # All rows should have the same value in all the fixed features. 
-  D_h[, fixed_features] <- h %>% dplyr::select(all_of(fixed_features))
-  D_h[, mut_features] <- h %>% dplyr::select(all_of(mut_features)) # Add this to get the correct datatypes (these are not used when predicting though!)
+  #D_h[, fixed_features] <- h %>% dplyr::select(all_of(fixed_features))
+  D_h[,fixed_features] <- h[fixed_features]
+  #D_h[, mut_features] <- h %>% dplyr::select(all_of(mut_features)) # Add this to get the correct datatypes (these are not used when predicting though!)
+  D_h[,mut_features] <- h[mut_features]
   
   # Now setup of D_h is complete. We move on to the second part, where we append columns to D_h. 
   
@@ -176,9 +178,18 @@ preds <- as.numeric(ANN %>% predict(data.matrix(x_test_ANN)))
 
 # Add predictions to original set of testing data. Then locate 100 points that are unfavourably predicted. 
 new_predicted_data <- data.frame(cbind(adult.data[row.names(test_ANN), ], "y_pred" = preds)) 
-H <- new_predicted_data[new_predicted_data$y_pred < 0.5, ] 
-s <- sample(1:nrow(H), size = CLI.args[2]) # Sample CLI.args[2] random points from H.
-H <- H[s,-which(names(new_predicted_data) %in% c("y_pred","y"))]  
+
+# Use CLI.args to make the name of the file automatically.
+filename_generation <- paste(CLI.args[1],"_H",CLI.args[2],"_K",CLI.args[3],"_bin",CLI.args[5], sep="") 
+
+if (CLI.args[4]) {
+  H <- new_predicted_data[new_predicted_data$y_pred < 0.5, ] 
+  s <- sample(1:nrow(H), size = CLI.args[2]) # Sample CLI.args[2] random points from H.
+  # We also simply assume that nrow(H) > CLI.args[2].
+  H <- H[s,-which(names(new_predicted_data) %in% c("y_pred","y"))]  
+} else if (CLI.args[4] != T){
+  load(paste0("results/Hs/H_",filename_generation,".RData"), verbose = T)
+} 
 
 K <- as.numeric(CLI.args[3]) # Assume that the third command line input is an integer. 
 
@@ -194,8 +205,6 @@ generate_counterfact_for_H <- function(H_l, K.num){
   return(D_h_per_point)
 }
 
-# Use CLI.args to make the name of the file automatically.
-filename_generation <- paste(CLI.args[1],"_H",CLI.args[2],"_K",CLI.args[3],"_bin",CLI.args[5], sep="") 
 if (CLI.args[4]){
   D_h_per_point <- generate_counterfact_for_H(H_l = H, K) # Generate the matrix D_h for each factual we want to explain (in H)
   save(D_h_per_point, file = paste("results/D_hs/",filename_generation,".RData",sep="")) # Save the generated D_h per point.
@@ -330,7 +339,7 @@ final_counterfactuals <- generate_one_counterfactual_all_points(D_h_post_process
 # Thus, this is an ok check to do. 
 
 violate <- function(){
-  # We leave this out for now!
+  # Not used for now. 
   unique_D_h$violation <- rep(NA, nrow(unique_D_h))
   for (i in 1:nrow(unique_D_h)){
     unique_D_h[i,"violation"] <- sum(x_h[,fixed_features] != unique_D_h[i,fixed_features]) 

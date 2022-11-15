@@ -136,4 +136,4 @@ save(valid_ANN, file = paste("data/exp4_data/valid_data_exp4_ANN",".RData",sep="
 
 # We also need to save m and M for de-normalization later. 
 normalization_constants <- data.frame("m" = m, "M" = M)
-write.csv(normalization_constants,"data/exp3_data/normalization_constants_exp4.csv", row.names = F)
+write.csv(normalization_constants,"data/exp4_data/normalization_constants_exp4.csv", row.names = F)

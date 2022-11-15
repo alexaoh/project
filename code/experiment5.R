@@ -28,7 +28,7 @@ for (i in CLI.args){
 } # We do not really use all these parameters, but we add them here for "resemblance" with exp3 and exp4. 
   # Should make the code more general (all of it) if time before delivery. 
 
-CLI.args <- c("ANN",100,10000,"TRUE","FALSE") # For continuous data. 
+CLI.args <- c("ANN",100,10000,TRUE,TRUE) # For continuous data. 
 # K = 1000000 punkter tar veldig lang tid i minnet.
 
 # Parameter for choosing standardscaler or not. 
@@ -47,7 +47,7 @@ if (CLI.args[5]){
   load("data/adult_data_categ.RData", verbose = T) # Categorical factors as they come originally. 
   ANN <- load_model_hdf5("classifiers/ANN_experiment4.h5") # Load the classifier for step 1. 
   load("data/exp4_data/test_data_exp4_ANN.RData", verbose = T)
-  normalization_constants <- read.csv("data/exp3_data/normalization_constants_exp4.csv")
+  normalization_constants <- read.csv("data/exp4_data/normalization_constants_exp4.csv")
 } else {
   stop("Please supply either T (binarized data) of F (categorical data) as the fit CLI argument.")
 }
@@ -181,10 +181,11 @@ summary(vae)
 vae_loss <- function(enc_mean, enc_log_var){
   # Loss function for our VAE (with Gaussian assumptions).
   vae_reconstruction_loss <- function(y_true, y_predict){
-    loss_factor <- 100 # Give weight to the reconstruction in the loss function ("hyperparameter")
+    loss_factor <- 1 # Give weight to the reconstruction in the loss function ("hyperparameter")
     #reconstruction_loss <- metric_mean_squared_error(y_true, y_predict) 
     #reconstruction_loss <- loss_binary_crossentropy(y_true, y_predict) # Or binary cross entropy?
-    reconstruction_loss <- k_mean(k_square(y_true - y_predict))
+    # reconstruction_loss <- k_mean(k_square(y_true - y_predict))
+    reconstruction_loss <- k_sum(k_square(y_true - y_predict))
     return(reconstruction_loss*loss_factor)
   }
   
@@ -257,7 +258,7 @@ plot(history)
 filename_generation1 <- paste(CLI.args[1],"_H",CLI.args[2],"_K10000_bin",CLI.args[5], sep="") 
 load(paste("results/Hs/H_",filename_generation1,".RData",sep=""), verbose = T)
 
-generation_method <- 4 # Choose the method for generation, corresponding to the numbering in the report. 
+generation_method <- 1 # Choose the method for generation, corresponding to the numbering in the report. 
 K <- as.numeric(CLI.args[3]) # Choose the size of the sample from the VAE per factual. 
 
 #K <- 3*nrow(x_train)
@@ -338,16 +339,41 @@ decoded_latent_sample <- function(s){
   # Change the names of the categorical values in the decoded data. This was done with the objective of making matching plots. 
   decoded_data_rand$workclass[decoded_data_rand$workclass == "workclass..Private"] <- " Private"
   decoded_data_rand$workclass[decoded_data_rand$workclass == "workclass..Other"] <- " Other"
+  decoded_data_rand$workclass[decoded_data_rand$workclass == "workclass..Local.gov"] <- " Local-gov"
+  decoded_data_rand$workclass[decoded_data_rand$workclass == "workclass..Self.emp.inc"] <- " Self-emp-inc"
+  decoded_data_rand$workclass[decoded_data_rand$workclass == "workclass..Self.emp.not.inc"] <- " Self-emp-not-inc"
+  decoded_data_rand$workclass[decoded_data_rand$workclass == "workclass..State.gov"] <- " State-gov"
+  decoded_data_rand$workclass[decoded_data_rand$workclass == "workclass..Without.pay"] <- " Without-pay"
   decoded_data_rand$marital_status[decoded_data_rand$marital_status == "marital_status..Other"] <- " Other"
   decoded_data_rand$marital_status[decoded_data_rand$marital_status == "marital_status..Married.civ.spouse"] <- " Married-civ-spouse"
+  decoded_data_rand$marital_status[decoded_data_rand$marital_status == "marital_status..Divorced"] <- " Divorced"
+  decoded_data_rand$marital_status[decoded_data_rand$marital_status == "marital_status..Never.married"] <- " Never-married"
+  decoded_data_rand$marital_status[decoded_data_rand$marital_status == "marital_status..Widowed"] <- " Widowed"
+  decoded_data_rand$marital_status[decoded_data_rand$marital_status == "marital_status..Separated"] <- " Separated"
   decoded_data_rand$occupation[decoded_data_rand$occupation == "occupation..Other"] <- " Other"
   decoded_data_rand$occupation[decoded_data_rand$occupation == "occupation..Craft.repair"] <- " Craft-repair"
+  decoded_data_rand$occupation[decoded_data_rand$occupation == "occupation..Adm.clerical"] <- " Adm-clerical"
+  decoded_data_rand$occupation[decoded_data_rand$occupation == "occupation..Exec.managerial"] <- " Exec-managerial"
+  decoded_data_rand$occupation[decoded_data_rand$occupation == "occupation..Farming.fishing"] <- " Farming-fishing"
+  decoded_data_rand$occupation[decoded_data_rand$occupation == "occupation..Machine.op.inspct"] <- " Machine-op-inspct"
+  decoded_data_rand$occupation[decoded_data_rand$occupation == "occupation..Transport.moving"] <- " Transport-moving"
+  decoded_data_rand$occupation[decoded_data_rand$occupation == "occupation..Other.service"] <- " Other-service"
+  decoded_data_rand$occupation[decoded_data_rand$occupation == "occupation..Prof.specialty"] <- " Prof-specialty"
+  decoded_data_rand$occupation[decoded_data_rand$occupation == "occupation..Sales"] <- " Sales"
   decoded_data_rand$relationship[decoded_data_rand$relationship == "relationship..Husband"] <- " Husband"
   decoded_data_rand$relationship[decoded_data_rand$relationship == "relationship..Other"] <- " Other"
+  decoded_data_rand$relationship[decoded_data_rand$relationship == "relationship..Not.in.family"] <- " Not-in-family"
+  decoded_data_rand$relationship[decoded_data_rand$relationship == "relationship..Own.child"] <- " Own-child"
+  decoded_data_rand$relationship[decoded_data_rand$relationship == "relationship..Unmarried"] <- " Unmarried"
+  decoded_data_rand$relationship[decoded_data_rand$relationship == "relationship..Wife"] <- " Wife"
   decoded_data_rand$race[decoded_data_rand$race == "race..Other"] <- " Other"
   decoded_data_rand$race[decoded_data_rand$race == "race..White"] <- " White"
+  decoded_data_rand$race[decoded_data_rand$race == "race..Black"] <- " Black"
+  decoded_data_rand$race[decoded_data_rand$race == "race..Amer.Indian.Eskimo"] <- " Amer-Indian-Eskimo"
+  decoded_data_rand$race[decoded_data_rand$race == "race..Asian.Pac.Islander"] <- " Asian-Pac-Islander"
   decoded_data_rand$native_country[decoded_data_rand$native_country == "native_country..Other"] <- " Other"
   decoded_data_rand$native_country[decoded_data_rand$native_country == "native_country..United.States"] <- " United-States"
+  decoded_data_rand$native_country[decoded_data_rand$native_country == "native_country..Mexico"] <- " Mexico"
   decoded_data_rand$sex[decoded_data_rand$sex == "sex..Male"] <- " Male"
   decoded_data_rand$sex[decoded_data_rand$sex == "sex..Female"] <- " Female"
  
@@ -383,7 +409,7 @@ generate_counterfactuals_for_Hs <- function(method, K){
 
 D_h_per_point <- generate_counterfactuals_for_Hs(generation_method, K)
 filename_generation2 <- paste(CLI.args[1],"_H",CLI.args[2],"_K",CLI.args[3],"_bin",CLI.args[5], sep="") 
-save(D_h_per_point, file = paste("results/D_hs/",filename_generation2,".RData",sep="")) # Save the generated D_hs. 
+save(D_h_per_point, file = paste("resultsVAE/D_hs/",filename_generation2,".RData",sep="")) # Save the generated D_hs. 
 
 ############################### Post-processing (inspired by Experiment 3/4).
 # We do the same steps as in those experiments, with some added (because of the VAE instead of the trees. )
@@ -446,6 +472,7 @@ post.processing <- function(D_h, H, data){ # 'data' is used to calculate normali
       D_h <- D_h_pp[[i]]
       D_h <- fulfill_crit3_D_h(D_h, c) # Since we cannot use Keras to predict on an empty matrix, we satisfy actionability (criterion 2) after predicting. 
       
+      # Fulfill criterion 2. 
       h <- H[i,]
       D_h_pp[[i]] <- D_h[interaction(D_h[,fixed_features], drop = T) %in% as.character(interaction(h[,fixed_features])),] # Fulfill criterion 2.
       # This is a very clever solution I found on StackOverflow!
@@ -509,7 +536,7 @@ generate_one_counterfactual_all_points <- function(D_h_pp){
 }
 
 
-final_counterfactuals_exp6 <- generate_one_counterfactual_all_points(D_h_post_processed)
+final_counterfactuals_exp5 <- generate_one_counterfactual_all_points(D_h_post_processed)
 
 ########################### Performance metrics. All these should be calculated on "final_counterfactuals"!
 # Violation: Number of actionability constraints violated by the counterfactual. 
@@ -535,9 +562,9 @@ violate <- function(){
 
 L0s <- c()
 L2s <- c()
-N_CEs <- rep(NA, length(final_counterfactuals_exp6))
-for (i in 1:length(final_counterfactuals_exp6)){
-  l <- final_counterfactuals_exp6[[i]]
+N_CEs <- rep(NA, length(final_counterfactuals_exp5))
+for (i in 1:length(final_counterfactuals_exp5)){
+  l <- final_counterfactuals_exp5[[i]]
   n <- nrow(l)
   N_CEs[i] <- n
   if (n >= 0){
@@ -549,7 +576,8 @@ for (i in 1:length(final_counterfactuals_exp6)){
 exp_MCCE <- data.frame("L0" = mean(L0s), "L2" = mean(L2s), "N_CE" = sum(N_CEs))
 knitr::kable(exp_MCCE)
 write.csv(exp_MCCE, file = paste("resultsVAE/resulting_metrics_", filename_generation2, ".csv", sep = ""))
-save(final_counterfactuals_exp6, file = paste("resultsVAE/final_counterfactuals_", filename_generation2, ".RData", sep = ""))
+save(final_counterfactuals_exp5, file = paste("resultsVAE/final_counterfactuals_", filename_generation2, ".RData", sep = ""))
 
 # After generation is done, make latex tables I can paste into report. 
 knitr::kable(exp_MCCE, format = "latex", linesep = "", digits = 4, booktabs = T) %>% print()
+load(paste("resultsVAE/final_counterfactuals_", filename_generation2, ".RData", sep = ""))
