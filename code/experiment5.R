@@ -28,7 +28,7 @@ for (i in CLI.args){
 } # We do not really use all these parameters, but we add them here for "resemblance" with exp3 and exp4. 
   # Should make the code more general (all of it) if time before delivery. 
 
-CLI.args <- c("ANN",100,10000,TRUE,TRUE) # For continuous data. 
+CLI.args <- c("ANN",100,10000,TRUE,FALSE) # For categorical data. 
 # K = 1000000 punkter tar veldig lang tid i minnet.
 
 # Parameter for choosing standardscaler or not. 
@@ -411,6 +411,9 @@ D_h_per_point <- generate_counterfactuals_for_Hs(generation_method, K)
 filename_generation2 <- paste(CLI.args[1],"_H",CLI.args[2],"_K",CLI.args[3],"_bin",CLI.args[5], sep="") 
 save(D_h_per_point, file = paste("resultsVAE/D_hs/",filename_generation2,".RData",sep="")) # Save the generated D_hs. 
 
+#load("resultsVAE/D_hs/ANN_H100_K10000_binTRUE.RData", verbose = T)
+#load("resultsVAE/D_hs/ANN_H100_K10000_binFALSE.RData", verbose = T)
+
 ############################### Post-processing (inspired by Experiment 3/4).
 # We do the same steps as in those experiments, with some added (because of the VAE instead of the trees. )
 post.processing <- function(D_h, H, data){ # 'data' is used to calculate normalization factors for Gower.
@@ -567,7 +570,7 @@ for (i in 1:length(final_counterfactuals_exp5)){
   l <- final_counterfactuals_exp5[[i]]
   n <- nrow(l)
   N_CEs[i] <- n
-  if (n >= 0){
+  if (n >= 1){
     L0s <- c(L0s,l$sparsity)
     L2s <- c(L2s,l$gower)
   } 
@@ -580,4 +583,68 @@ save(final_counterfactuals_exp5, file = paste("resultsVAE/final_counterfactuals_
 
 # After generation is done, make latex tables I can paste into report. 
 knitr::kable(exp_MCCE, format = "latex", linesep = "", digits = 4, booktabs = T) %>% print()
-load(paste("resultsVAE/final_counterfactuals_", filename_generation2, ".RData", sep = ""))
+#load(paste("resultsVAE/final_counterfactuals_", filename_generation2, ".RData", sep = ""), verbose = T)
+
+
+###### Check proportion of predicted positive outcomes in D_h_per_point (after generation).
+##### And check number of generated points that have the correct fixed feature values. 
+# We use the function below to calculate how many are predicted as positive. 
+# This is copied from the post-processing.
+fulfill_crit3_D_h <- function(D_h, c){
+  # Build design matrix manually to avoid contrast problems with factors with missing levels (when not generating "enough" data)!!
+  col_names <- colnames(x_test_ANN)
+  col_names_categ <- setdiff(col_names,cont)
+  onehot_test_dat <- data.frame(D_h[,cont])
+  col_names_D_h <- colnames(D_h)
+  col_names_D_h <- setdiff(col_names_D_h,cont)
+  for (n in col_names_D_h){
+    true_factors <- levels(adult.data[,n]) # Find the factors we want from adult.data
+    for (new_col in 1:length(true_factors)){ # Make one new column per factor in the design matrix.
+      column_name_new <- paste0(n,"..",substring(true_factors[new_col], 2, nchar(true_factors[new_col])))
+      onehot_test_dat[,column_name_new] <- ifelse(D_h[n] == true_factors[new_col], 1,0)
+    }
+  }
+  # Now the manual design matrix has been built!
+  
+  # Normalize the data before prediction.
+  if (standardscaler){
+    d_onehot_test <- scale(onehot_test_dat[,cont], center = m_ANN, scale = M_ANN)
+    catego <- setdiff(names(onehot_test_dat), cont)
+    onehot_test_dat <- cbind(d_onehot_test, onehot_test_dat[,catego])[,colnames(onehot_test_dat)]
+  } else {
+    # min-max normalization according to mins and maxes from training data. 
+    for (j in 1:length(cont)){
+      cont_var <- cont[j]
+      onehot_test_dat[,cont_var] <- (onehot_test_dat[,cont_var]-m_ANN[j])/(M_ANN[j]-m_ANN[j])
+    }
+  }
+  
+  predictions <- as.numeric(ANN %>% predict(data.matrix(onehot_test_dat)))
+  D_h_crit3 <- D_h[predictions >= c,] # prediction_model(*) is the R function that predicts 
+  # according to the model we want to make explanations for. 
+  # We can see that many rows are the same. The duplicates are removed below. 
+  unique_D_h <- unique(D_h_crit3)
+  return(unique_D_h)
+}
+
+fulfill_fixed <- function(h, D_h){
+  # Function for removing rows that do not have the correct fixed feature values. 
+    # Fulfill criterion 2. 
+  D <- D_h[interaction(D_h[,fixed_features], drop = T) %in% as.character(interaction(h[,fixed_features])),] # Fulfill criterion 2.
+    # This is a very clever solution I found on StackOverflow!
+  return(D)
+}
+
+rows_with_fixed_feat_correct <- rep(NA,nrow(H)) # For seeing how many generating inds have the same fixed features as h.
+props_of_pred_y <- rep(NA,nrow(H))
+for (i in 1:nrow(H)){
+  props_of_pred_y[i] <- nrow(fulfill_crit3_D_h(D_h_per_point[[i]], 0.5))/K
+  rows_with_fixed_feat_correct[i] <- nrow(fulfill_fixed(H[i,],D_h_per_point[[i]]))
+}
+mean(props_of_pred_y)
+sd(props_of_pred_y)
+hist(props_of_pred_y, breaks = 40)
+
+mean(rows_with_fixed_feat_correct)
+sd(rows_with_fixed_feat_correct)
+hist(rows_with_fixed_feat_correct, breaks = 40)

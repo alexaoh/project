@@ -1,6 +1,6 @@
 # We print some tables of counterfactuals for the same h \in H
 # generated with MCCE and Modified MCCE respectively.
-
+library(kableExtra)
 setwd("/home/ajo/gitRepos/project")
 
 # First we compare exp3 and exp5 (with binarized data).
@@ -60,7 +60,12 @@ preds
 df <- rbind(df, "f()" = preds)
 df
 
-knitr::kable(df, format = "latex", linesep = "", digits = 3, booktabs = T) %>% print()
+# Make fancy latex table for report. 
+knitr::kable(df, format = "latex", linesep = "", digits = 3, booktabs = T) %>% 
+  kable_styling(latex_options = c("scale_down")) %>% 
+  column_spec(1, monospace = T) %>% 
+  row_spec(c(1,9), background = "lgrey") %>% # Have defined a color lgrey in latex document.
+  print()
 
 
 ############## Then we look at exp4 and exp6 (with the categorical data).
@@ -120,4 +125,8 @@ preds
 df <- rbind(df, "f()" = preds)
 df
 
-knitr::kable(df, format = "latex", linesep = "", digits = 3, booktabs = T) %>% print()
+knitr::kable(df, format = "latex", linesep = "", digits = 3, booktabs = T) %>% 
+  kable_styling(latex_options = c("scale_down")) %>% 
+  column_spec(1, monospace = T) %>% 
+  row_spec(c(1,9), background = "lgrey") %>% # Have defined a color lgrey in latex document.
+  print()

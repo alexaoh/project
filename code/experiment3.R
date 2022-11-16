@@ -362,7 +362,7 @@ for (i in 1:length(final_counterfactuals)){
   l <- final_counterfactuals[[i]]
   n <- nrow(l)
   N_CEs[i] <- n
-  if (n >= 0){
+  if (n >= 1){
     L0s <- c(L0s,l$sparsity)
     L2s <- c(L2s,l$gower)
   } 
