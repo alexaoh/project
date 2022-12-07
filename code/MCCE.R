@@ -196,7 +196,7 @@ generate <- function(h, K){ # K = 10000 is used in the article for the experimen
     
     for (i in 1:K){
       # Add a single sample from the end node of tree T_j[j] based on data D_h[i,u+j] to d[i].
-      end_node_distr <- predict(T_j[[j]], newdata = D_h[i,1:(u+j-1)]) # Usikker på om "predict" blir korrekt her? Burde det vært en "where" for å finne indeks først?
+      end_node_distr <- predict(T_j[[j]], newdata = D_h[i,1:(u+j-1)]) 
       sorted <- sort(end_node_distr, decreasing = T, index.return = T)
       largest_class <- sorted$x
       largest_index <- sorted$ix

@@ -5,6 +5,7 @@ library(dplyr)
 library(tidyr)
 library(GGally)
 library(scales)
+library(kableExtra)
 options(knitr.kable.NA = '')
 
 setwd("/home/ajo/gitRepos/project")
@@ -49,11 +50,11 @@ limits <- list(
 )
 
 for (i in 1:length(cont)){
-  plot(make_dens(cont[i], decoded_data_rand,T, limits[[i]])) # We simply make the grid in latex instead!
+  plot(make_dens(cont[i], D2,F, limits[[i]])) # We simply make the grid in latex instead!
 }
 
 # Get correlations of the continuous variables. 
-co <- cor(decoded_data_rand[,cont])
+co <- cor(D2[,cont])
 co[lower.tri(co)] <- NA
 co <- data.frame(co)
 colnames(co) <- c("age", "fnlwgt","ed_num","cap_gain","cap_loss","h_p_week")
@@ -86,7 +87,7 @@ make_hist <- function(variable, data, save){
 }
 
 for (n in categ){
-  plot(make_hist(n,decoded_data_rand, T))
+  plot(make_hist(n,D2, F))
 }
 
 ##### Make cross-correlation tables between select categorical variables. 
@@ -99,13 +100,13 @@ make_cross_correlation <- function(data,first.feat, second.feat){
 }
 #(tab <- make_cross_correlation(adult.data, "sex","native_country"))
 #knitr::kable(tab,format = "latex", linesep = "", digits = 3, booktabs = T) %>% print()
-(tab <- make_cross_correlation(adult.data, "sex","workclass"))
-knitr::kable(tab,format = "latex", linesep = "", digits = 3, booktabs = T) %>% print()
-mosaicplot(tab, main = "")
-(tab <- make_cross_correlation(adult.data, "sex","race"))
-knitr::kable(tab,format = "latex", linesep = "", digits = 3, booktabs = T) %>% print()
-(tab <- make_cross_correlation(adult.data, "sex","relationship"))
-knitr::kable(tab,format = "latex", linesep = "", digits = 3, booktabs = T) %>% print()
+#(tab <- make_cross_correlation(adult.data, "sex","workclass"))
+#knitr::kable(tab,format = "latex", linesep = "", digits = 3, booktabs = T) %>% print()
+#mosaicplot(tab, main = "")
+#(tab <- make_cross_correlation(adult.data, "sex","race"))
+#knitr::kable(tab,format = "latex", linesep = "", digits = 3, booktabs = T) %>% print()
+#(tab <- make_cross_correlation(adult.data, "sex","relationship"))
+#knitr::kable(tab,format = "latex", linesep = "", digits = 3, booktabs = T) %>% print()
 #(tab <- make_cross_correlation(adult.data, "sex","marital_status"))
 #knitr::kable(tab,format = "latex", linesep = "", digits = 3, booktabs = T) %>% print()
 
@@ -122,14 +123,14 @@ make_mosaic_plot <- function(data, first.feat, second.feat, exp.num, vers.num){
 #print(make_mosaic_plot(adult.data,"sex","race","adult_data","bin"))
 
 # I guess I will do it manually instead then!
-plt <- decoded_data_rand %>% ggplot() +
-  geom_mosaic(mapping = aes(x = product(race), fill = relationship)) +
+plt <- D2 %>% ggplot() +
+  geom_mosaic(mapping = aes(x = product(sex), fill = occupation)) +
   theme_minimal() +
   scale_fill_grey()
 print(plt)
 ggsave("plots/mosaic/exp2_race_relationship_cat_alg4.pdf", width = 9, height = 5)
 
-#### Make ggplots for comparisons.
+#### Make Q-Q plots for comparisons.
 make_qqplot <- function(OG.data, gen.data, feature, exp.num, save){
   # Make qq-plots between generated data and original data. 
   # Always assume that the generated data set is larger (which is it in our experiments).
@@ -160,8 +161,7 @@ make_qqplot <- function(OG.data, gen.data, feature, exp.num, save){
 
 for (n in cont){
   # Make qqplots for all features in exp1 generated data. 
-  make_qqplot(adult.data, decoded_data_rand, n, "exp2", T)
+  make_qqplot(adult.data, D2, n, "exp1", T)
                                         # Need to change the second data set and the last name in order 
                                         # to make the qqplots for different experiments. 
 }
-

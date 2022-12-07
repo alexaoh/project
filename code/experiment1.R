@@ -125,15 +125,15 @@ generate_unconditional <- function(D_h){
 
 D2 <- generate_unconditional(D) # We generate samples from the trees.
 if (args[1] == "bin"){
-  save(D2, file = "unconditional_generated_trees_bin.RData") # Save the generated D_h per point.  
+  save(D2, file = "results/unconditional_generated_trees_bin.RData") # Save the generated D_h per point.  
 } else if (args[1] == "cat"){
-  save(D2, file = "unconditional_generated_trees_cat.RData")
+  save(D2, file = "results/unconditional_generated_trees_cat.RData")
 }
 
 # Next we compare this generated set of data from the trees to the real data!
 
-load("unconditional_generated_trees_bin.RData", verbose = T)
-load("unconditional_generated_trees_cat.RData", verbose = T)
+load("results/unconditional_generated_trees_bin.RData", verbose = T)
+load("results/unconditional_generated_trees_cat.RData", verbose = T)
 
 table(D2$sex)/sum(table(D2$sex))
 table(adult.data$sex)/sum(table(adult.data$sex))
