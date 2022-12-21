@@ -4,7 +4,7 @@
 # Adult data set: 
 # https://archive.ics.uci.edu/ml/datasets/Adult
 
-rm(list = ls())  # make sure to remove previously loaded variables into the Session.
+rm(list = ls())  # make sure to remove previously loaded variables into the Session. Just in case. 
 
 setwd("/home/ajo/gitRepos/project")
 library(rpart) # Try this for building CART trees instead!
@@ -26,11 +26,8 @@ for (i in CLI.args){
   print(i)
 }
 
-# Just for testing right now, should be removed later!
-CLI.args <- c("logreg",10,100, TRUE, TRUE)
-
-########################################### Build ML models for classification: which individuals obtain an income more than 50k yearly?
-set.seed(42) # Set seed to begin with!
+############################### Build ML models for classification: which individuals obtain an income more than 50k yearly?
+set.seed(42) # Set seed to begin with.
 
 # Load the data we want first. Loading and cleaning the original data is done in separate files. 
 if (CLI.args[5]){
@@ -69,8 +66,8 @@ if (CLI.args[1] == "ANN"){
   train_indices <- train_and_test_data[[5]]
   
   # The data is normalized (for performance) when we want to use the ANN as a predictive model. 
-  # It is done after splitting into training and testing, to avoid data leakage!
-  # Normalize the data AFTER splitting to avoid data leakage!
+  # It is done after splitting into training and testing, to avoid data leakage.
+  # Normalize the data AFTER splitting to avoid data leakage.
   x_train.normalization <- normalize.data(data = x_train, continuous_vars = cont, standardscaler = T) # returns list with data, mins and maxs.
   x_train <- x_train.normalization[[1]] # we are only interested in the data for now. 
   x_test.normalization <- normalize.data(data = x_test, continuous_vars = cont, standardscaler = T) # returns list with data, mins and maxs.
@@ -103,7 +100,7 @@ if (CLI.args[1] == "ANN"){
 # This is used to return the predicted probabilities according to the model we want to use (for later).
 prediction_model <- function(x_test,method){
   # This returns the predicted probabilities of class 1 (>= 50k per year).
-  # We need to make sure that we feed the ANN with the proper design/model matrix for it to work!
+  # We need to make sure that we feed the ANN with the proper design/model matrix for it to work.
   if (method == "logreg"){
     return(predict(logreg, data.frame(x_test), type = "response")) 
   } else if (method == "ANN"){
@@ -130,7 +127,7 @@ all.equal(ncol(data_min_response), p) # We want to check that p is correctly def
 
 ####### Make data for the VAE.
 # Make the design matrix for the DNN.
-adult.data.onehot <- make.data.for.ANN(adult.data, cont) # Compare this with the model.matrix approach from below, if time. 
+adult.data.onehot <- make.data.for.ANN(adult.data, cont) 
 
 # Make train and test data for our model matrix adult.data.
 train_and_test_data <- make.train.and.test(data = adult.data.onehot) # The function returns two matrices (x) and two vectors (y). 
@@ -144,8 +141,8 @@ y_test_vae <- train_and_test_data[[4]]
 train_indices_vae <- train_and_test_data[[5]]
 
 # The data is normalized (for performance) when we want to use the ANN as a predictive model. 
-# It is done after splitting into training and testing, to avoid data leakage!
-# Normalize the data AFTER splitting to avoid data leakage!
+# It is done after splitting into training and testing, to avoid data leakage.
+# Normalize the data AFTER splitting to avoid data leakage.
 x_train.normalization <- normalize.data(data = x_train_vae, continuous_vars = cont, standardscaler = T) # returns list with data, mins and maxs.
 x_train_vae <- x_train.normalization[[1]] # we are only interested in the data for now. 
 x_test.normalization <- normalize.data(data = x_test_vae, continuous_vars = cont, standardscaler = T) # returns list with data, mins and maxs.
@@ -179,11 +176,8 @@ z <- list(enc_mean, enc_log_var) %>%
   layer_lambda(sampling, name = "enc_output")
 
 
-#latent_inputs <- layer_input(shape = c(latent_dim), name = "dec_input")
 decoder_layer <- layer_dense(units = intermediate_dim, activation = "relu", name = "dec_hidden")
-outputs <- layer_dense(units = input_size, name = "dec_output") 
-# Could perhaps use the sigmoid activation to restrict data to (0,1) since we are dealing with normalized input data. 
-# outputs <- layer_dense(decoder_layer, input_size) # We test this here.  
+outputs <- layer_dense(units = input_size, name = "dec_output")  
 
 vae_encoder_output <- decoder_layer(z)
 vae_decoder_output <- outputs(vae_encoder_output)
@@ -193,22 +187,20 @@ summary(vae)
 vae_loss <- function(enc_mean, enc_log_var){
   # Loss function for our VAE (with Gaussian assumptions).
   vae_reconstruction_loss <- function(y_true, y_predict){
-    loss_factor <- 100 # Give weight to the reconstruction in the loss function ("hyperparameter")
-    #reconstruction_loss <- metric_mean_squared_error(y_true, y_predict) 
-    #reconstruction_loss <- loss_binary_crossentropy(y_true, y_predict) # Or binary cross entropy?
+    loss_factor <- 100 # Give weight to the reconstruction in the loss function ("hyperparameter" \beta).
     reconstruction_loss <- k_mean(k_square(y_true - y_predict))
     return(reconstruction_loss*loss_factor)
   }
   
   vae_kl_loss <- function(encoder_mu, encoder_log_variance){
-    kl <- -0.5*k_sum(1 + encoder_log_variance - k_square(encoder_mu) - k_exp(encoder_log_variance), axis = -1L) # Or axis = -1?
+    kl <- -0.5*k_sum(1 + encoder_log_variance - k_square(encoder_mu) - k_exp(encoder_log_variance), axis = -1L) 
     return(kl)
   }
   
   v_loss <- function(y_true, y_pred){
     reconstruction <- vae_reconstruction_loss(y_true, y_pred)
-    kl <- vae_kl_loss(enc_mean, enc_log_var)#*input_size # Trying to scale the KL divergence such that it is of a similar scale as the reconstruction loss.
-    return(reconstruction + kl) # + reconstruction
+    kl <- vae_kl_loss(enc_mean, enc_log_var)
+    return(reconstruction + kl)
   }
   return(v_loss)
 }
@@ -278,7 +270,7 @@ generate <- function(K){
   decoded_data_rand <- reverse.onehot.encoding(decoded_data_rand, cont, categ, has.label = F)
   
   ####### Re-center and re-scale the data set "back" to our original scales. 
-  # There is no clear way of doing it for the generated/decoded data, but we will use the center and the scale of the test-data here. 
+  # This is wrong now, should be scales and centers of the training data. Needs to be fixed later. 
   data_orig2 <- t(apply(decoded_data_rand[,cont], 1, function(r)r*x_test.normalization$sds + x_test.normalization$means))
   data_orig2 <- cbind(data_orig2, as.data.frame(decoded_data_rand[,-which(names(decoded_data_rand) %in% cont)]))
   decoded_data_rand <- data_orig2
@@ -288,7 +280,7 @@ generate <- function(K){
  
 if (CLI.args[1] %in% c("ANN", "logreg", "randomForest")){
   preds <- prediction_model(x_test, method = CLI.args[1]) 
-} else { # Perhaps we need to add a special if else for ANN here! (because of the model matrix being different!)
+} else { # Not complete for supporting ANN, since it has a different data structure (design matrix) compared to the others. 
   stop("Please supply either 'ANN', 'logreg' or 'randomForest' as the first CLI argument.")
 }
 
@@ -331,7 +323,7 @@ post.processing <- function(D_h, H, data){ # 'data' is used to calculate normali
     colm <- (data %>% select(colnames(data)[i]))[[1]]
     if (class(colm) == "integer" || class(colm) == "numeric"){
       q <- quantile(colm, c(0.01, 0.99))
-      norm.factors[[i]] <- c(q[1][[1]],q[2][[1]]) # Using min-max scaling, but with 0.01 and 0.99 quantiles!
+      norm.factors[[i]] <- c(q[1][[1]],q[2][[1]]) # Using min-max scaling, but with 0.01 and 0.99 quantiles.
     } else {
       norm.factors[[i]] <- NA
     }
@@ -349,24 +341,20 @@ post.processing <- function(D_h, H, data){ # 'data' is used to calculate normali
     for (i in 1:length(D_h_pp)){
       D_h <- D_h_pp[[i]]
       D_h$age <- round(D_h$age) # This is done to be certain that ages are whole numbers. Should definitely be done somewhere else!
-      D_h_pp[[i]] <- make_actionable(D_h, fixed_features, H[i,])# Make sure that the counterfactuals are actionable (not necessary for trees, necessary for VAE).
+      D_h_pp[[i]] <- make_actionable(D_h, fixed_features, H[i,]) # Make sure that the counterfactuals are actionable (not necessary for trees, necessary for VAE).
     }
     return(D_h_pp)
   }
   
   
   fulfill_crit3_D_h <- function(D_h, c, pred.method){
-    #D_h <- D_h_per_point[[1]]
-    #pred.method <- "ANN"
     if (pred.method == "ANN"){
-      onehot_test_dat <- as.data.frame(model.matrix(~.,data = D_h)) # Det er her den failer (for D_h'er som ikke har nok verdier!!)
+      onehot_test_dat <- as.data.frame(model.matrix(~.,data = D_h)) # Insert my manual design matrix code here! This does not work as is. 
       predictions <- prediction_model(onehot_test_dat, method = pred.method)
     } else {
       predictions <- prediction_model(D_h, method = pred.method)
     }
-    #c <- 0.5
-    D_h_crit3 <- D_h[predictions >= c,] # prediction_model(*) is the R function that predicts 
-    # according to the model we want to make explanations for. 
+    D_h_crit3 <- D_h[predictions >= c,]  
     # We can see that many rows are the same. The duplicates are removed below. 
     unique_D_h <- unique(D_h_crit3)
     return(unique_D_h)
@@ -377,7 +365,6 @@ post.processing <- function(D_h, H, data){ # 'data' is used to calculate normali
     for (i in 1:length(D_h_pp)){
       D_h <- D_h_pp[[i]]
       D_h_pp[[i]] <- fulfill_crit3_D_h(D_h, c, pred.method)
-      #D_h_pp[[i]] <- # Make sure that the counterfactuals are actionable (not necessary for trees, necessary for VAE).
     }
     return(D_h_pp)
   }
@@ -387,8 +374,6 @@ post.processing <- function(D_h, H, data){ # 'data' is used to calculate normali
   
   add_metrics_D_h_all_points <- function(D_h_pp, H_l, norm.factors){
     # Calculates sparsity and Gower for all counterfactuals and adds the columns to each respective D_h.
-    #D_h_pp <- D_h_per_point
-    #H_l <- H
     for (i in 1:length(D_h_pp)){
       D_h_pp[[i]] <- gower_D_h(H_l[i,], D_h_pp[[i]], norm.factors)
       D_h_pp[[i]] <- sparsity_D_h(H_l[i,], D_h_pp[[i]])
@@ -406,15 +391,15 @@ post.processing <- function(D_h, H, data){ # 'data' is used to calculate normali
 
 D_h_post_processed <- post.processing(D_h_per_point, H, adult.data[,-14])
 
-# Sjekker at alt fungerer som det skal!
+# Some checks while developing. Problems stemming from the design matrix above. 
+# The fix is used in code for Experiments 3 to 4, but not inserted here yet.
 crit3_D_h_per_point <- fulfill_crit3(D_h_per_point, 0.5, CLI.args[1])
 d <- D_h_per_point[[3]]
 d$relationship <- factor(d$relationship, levels = c(levels(d$relationship), "Husband"))
 onehot_test_dat <- as.data.frame(model.matrix(~.,data = d, contrasts.arg = list(
   relationship = contrasts(adult.data$relationship, contrasts = FALSE)
 )))
-# Ser at jeg må legge til ekstra levels for hver faktor der det mangler en level! (for at det skal være mulig å lage en model.matrix!)
-# Finnes det noen annen måte jeg kan gjøre dette på!?!?? Høre med Kjersti!!!
+
 
 
 ############ Do we want several counterfactuals per factual or only one? Below we select one!
@@ -450,28 +435,7 @@ generate_one_counterfactual_all_points <- function(D_h_pp){
 
 final_counterfactuals <- generate_one_counterfactual_all_points(D_h_post_processed)
 
-########################### Performance metrics. All these should be calculated on "final_counterfactuals"!
-# Violation: Number of actionability constraints violated by the counterfactual. 
-# This should inherently be zero if I have implemented the algorithm correctly!! 
-# Thus, this is an ok check to do. 
-
-violate <- function(){
-  # We leave this out for now!
-  unique_D_h$violation <- rep(NA, nrow(unique_D_h))
-  for (i in 1:nrow(unique_D_h)){
-    unique_D_h[i,"violation"] <- sum(x_h[,fixed_features] != unique_D_h[i,fixed_features]) 
-  }
-  
-  # Success: if the counterfactual produces a positive predictive response.
-  # This is 1 inherently, from the post-processing step done above (where we only keep the rows in D_h that have positive predictive response).
-  prediction_model(unique_D_h, method = CLI.args[1]) # As we can see, success = 1 for these counterfactuals. 
-  
-}
-
-############################## Experiments. 
-# Experiment 1:
 # Averages of all the metrics calculated and added to unique_D_h.
-
 L0s <- c()
 L2s <- c()
 N_CEs <- rep(NA, length(final_counterfactuals))

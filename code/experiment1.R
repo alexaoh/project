@@ -1,5 +1,4 @@
-# In this file we test how the generated distributions from the trees are, 
-# when we do not fix on any ages or sexes in the steps of the generation.
+# Code for producing results in Experiment 1. 
 
 library(rpart)
 library(dplyr)
@@ -44,17 +43,13 @@ fit.trees <- function(){
     covariates <- paste(c(fixed_features,mut_features[1:i-1]), collapse = "+")
     tot_form <- as.formula(paste(mut_features[i]," ~ ", covariates, sep= ""))
     total_formulas[[i]] <- tot_form
-    #print(tot_form)
+
     if (mut_datatypes[[i]] == "factor"){ 
-      #T_j[[i]] <- tree(tot_form, data = adult.data, control = tree.control(nobs = nrow(adult.data), mincut = 80, minsize = 160), split = "gini", x = T)
-      #T_j[[i]] <- rpart(tot_form, data = adult.data, method = "class", control = rpart.control(minsplit = 2, minbucket = 1)) 
       T_j[[i]] <- rpart(tot_form, data = adult.data, method = "class", control = rpart.control(minbucket = 5, cp = 1e-6)) 
-      # Method = "class": Uses Gini index, I believe. Check the docs again. 
+      # Method = "class": Uses Gini index by default. 
     } else if (mut_datatypes[[i]] == "integer" || mut_datatypes[[i]] == "numeric"){ # mean squared error.
-      #T_j[[i]] <- tree(tot_form, data = adult.data, control = tree.control(nobs = nrow(adult.data), mincut = 5, minsize = 10), split = "deviance", x = T)
-      #T_j[[i]] <- rpart(tot_form, data = adult.data, method = "anova", control = rpart.control(minsplit = 2, minbucket = 1)) 
       T_j[[i]] <- rpart(tot_form, data = adult.data, method = "anova", control = rpart.control(minbucket = 5, cp = 1e-10)) 
-      # Method = "anova": SST-(SSL+SSR). Check out the docs. This should (hopefully) be the same as Mean Squared Error. 
+      # Method = "anova": SST-(SSL+SSR). 
     } else { 
       stop("Error: Datatypes need to be either factor or integer/numeric.") # We need to use "numeric" if we have normalized the data!
     } 
@@ -65,7 +60,7 @@ fit.trees <- function(){
 fitted.tree.list <- fit.trees()
 T_j <- fitted.tree.list[[1]]
 total_formulas <- fitted.tree.list[[2]]
-length(T_j) # Should have 12 trees now. 
+length(T_j) # We have 12 trees now. 
 total_formulas
 
 # We simply sample from our original data and make a similar generation algorithm to before. 
@@ -159,10 +154,6 @@ table(adult.data$native_country)/sum(table(adult.data$native_country))
 summary(D2 %>% dplyr::select(cont))
 summary(adult.data %>% dplyr::select(cont))
 
-# Could make tables like this as well perhaps. 
-table(adult.data[,c("sex")], adult.data[,c("native_country")])/sum(table(adult.data[,c("sex")], adult.data[,c("native_country")]))
-table(D2[,c("sex")], D2[,c("native_country")])/sum(table(D2[,c("sex")], D2[,c("native_country")]))
-
 cont.summary <- function(data){
   summary <- data %>%
     dplyr::select(c("sex",cont)) %>%
@@ -180,7 +171,7 @@ cont.summary <- function(data){
 knitr::kable(cont.summary(adult.data), format = "latex", linesep = "", digits = 1, booktabs = T) %>% print()
 knitr::kable(cont.summary(D2), format = "latex", linesep = "", digits = 1, booktabs = T) %>% print()
 
-# Looking at bit more closely at come of the continuous features.
+# Looking at bit more closely at some of the continuous features.
 cap_gain_OG <- (adult.data %>% dplyr::select(capital_gain))[[1]]
 cap_gain_gen <- (D2 %>% dplyr::select(capital_gain))[[1]]
 summary(cap_gain_OG)
@@ -196,20 +187,18 @@ length(cap_loss_OG[cap_loss_OG != 0])/length(cap_loss_OG)
 length(cap_loss_gen[cap_loss_gen != 0])/length(cap_loss_gen)
 
 # Make plots for showing ratios between levels in categorical features. 
+# First iteration of plots. The final type of plot that was used can be found in "investigate_data.R"
 make_ggplot_for_categ <- function(data, filename, save){
   data.categ <- data[,categ]
   data.categ.wide <- data.categ %>% tidyr::pivot_longer(categ) %>% count(name, value) %>% mutate(ratio = round(n/nrow(data.categ), 3))
-  #adult.data.categ.wide <- adult.data.categ %>% tidyr::pivot_longer(categ)
-  #adult.data.categ <- apply(adult.data.categ,FUN = function(x){table(x)/sum(table(x))}, MARGIN = 2)
   categ_plot <- data.categ.wide %>% ggplot(aes(x = name, y = ratio, fill = value)) +
-    geom_col(position = "stack", show.legend = F) + # For kategorisk data må legend fjernes
+    geom_col(position = "stack", show.legend = F) + # Need to remove legend for categorical data (for readibility).
     geom_text(aes(label = ratio), position = position_stack(vjust = 0.5)) +
     theme_minimal() 
-    #geom_text(nudge_y = 1)
   if (save) ggsave(paste0("plots/",filename,".pdf"), width = 10, height = 5)
   return(categ_plot)
 }
 
-# Vanskeligere å lage disse plottene for den kategoriske dataen!!
+# These are not very nice for the categorical data. 
 make_ggplot_for_categ(adult.data, "adult_data_categ_ratios_cat_data", T)
 make_ggplot_for_categ(D2, "generated_exp1_categ_ratios_cat_data", T)

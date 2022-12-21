@@ -4,14 +4,8 @@ setwd("/home/ajo/gitRepos/project")
 set.seed(42) # Set seed to begin with!
 
 ###################################### Loading and cleaning the Adult data.
-#data1 <- read.csv("original_data/adult.data", header = F) 
-data1 <- read.table("original_data/adult.data", sep = ",", header = F, na.strings = " ?") # Bedre!!
-#data2 <- read.csv("original_data/adult.test", header = F) 
-data2 <- read.table("original_data/adult.test", sep = ",", header = F, na.strings = " ?") # Bedre!!
-# adult.data <- read.csv("data_from_mcce_github.csv")
-# colnames(adult.data) <- c("age","workclass","fnlwgt","education_num",
-#                                           "marital_status","occupation","relationship","race","sex",
-#                                           "capital_gain","capital_loss","hours_per_week","native_country", "y")
+data1 <- read.table("original_data/adult.data", sep = ",", header = F, na.strings = " ?") 
+data2 <- read.table("original_data/adult.test", sep = ",", header = F, na.strings = " ?") 
 colnames(data1) <- colnames(data2) <- c("age","workclass","fnlwgt","education","education_num",
                       "marital_status","occupation","relationship","race","sex",
                       "capital_gain","capital_loss","hours_per_week","native_country", "y")
@@ -28,9 +22,6 @@ adult.data$y[adult.data$y == " <=50K."] <- " <=50K"
 adult.data$y[adult.data$y == " <=50K"] <- " <=50K"
 adult.data$y[adult.data$y == " >50K."] <- " >50K"
 adult.data$y[adult.data$y == " >50K"] <- " >50K"
-# adult.data$y[adult.data$y == ">50K"] <- 1
-# adult.data$y[adult.data$y == "<=50K"] <- 0
-#adult.data$y <- as.numeric(adult.data$y)
 
 # Fix binarization into 0 and 1 for y. 
 response <- array(0,dim(adult.data)[1])
@@ -41,7 +32,6 @@ adult.data[,15] <- as.numeric(response)
 most_frequent <- function(vec){
   names(sort(table(vec), decreasing = T))[1]
 }
-
 
 binarize <- function(vec){
   vec[which(vec != most_frequent(vec))] <- " Other"

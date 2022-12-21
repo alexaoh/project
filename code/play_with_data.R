@@ -1,6 +1,4 @@
-# Have a look at the numerical variables in the Adult Census dataset.
-# I have not been able to successfully model the marginal distributions 
-# of these variables. Check if I could remove some outliers.
+# Have a manual look at the numerical variables in the Adult Census dataset.
 
 rm(list = ls())  # make sure to remove previously loaded variables into the Session.
 
@@ -27,7 +25,7 @@ cap_gain <- (adult.data %>% select(capital_gain))[[1]]
 summary(cap_gain)
 boxplot(cap_gain)
 length(cap_gain[cap_gain != 0])
-length(cap_gain) #Most entries are 0! Thus, this variable is extremely difficult to model!
+length(cap_gain) # Most entries are 0! Thus, this variable is extremely difficult to model!
 head(sort(cap_gain, decreasing = T), 1000)
 cap_gain <- cap_gain[cap_gain < 50000]
 summary(cap_gain)

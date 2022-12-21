@@ -1,17 +1,14 @@
-# Try to fit a random forest classifier, mostly in order to see if I actually am able to build a classifier that is good for our data.
+# Fit a simple random forest classifier with Ranger. 
 
 setwd("/home/ajo/gitRepos/project")
 source("code/utilities.R")
 
-library(ranger) # I am not getting ranger to work!!? It works in the shell, but not in Rstudio!?
+library(ranger) 
 library(hmeasure)
+library(pROC)
 load("data/adult_data_categ.RData", verbose = T) 
 
-# We try to normalize first. 
 cont <- c("age","fnlwgt","education_num","capital_gain","capital_loss","hours_per_week")
-#adult.data.normalized <- normalize.data(data = adult.data, continuous_vars = cont) # returns list with data, mins and maxs.
-#summary(adult.data.normalized)
-#adult.data <- adult.data.normalized[[1]] # we are only interested in the data for now. 
 
 response <- array(0,dim(adult.data)[1])
 response[which(as.character(adult.data[,14])==" >50K")] <- 1
@@ -29,22 +26,9 @@ y_test <- train_and_test_data[[4]]
 train <- train_and_test_data[[5]]
 test <- train_and_test_data[[6]]
 
-rfor <- ranger(as.factor(train[,14]) ~ ., data = train[,-14],
-               #, num.trees = 500, num.threads = 6,
-               #verbose = TRUE,
-               probability = TRUE)
-               #importance = "impurity",
-               #mtry = sqrt(13))
-
+rfor <- ranger(as.factor(train[,14]) ~ ., data = train[,-14], probability = TRUE)
+               
 preds <- predict(rfor, data = test[,-14])$predictions[,2]
-# preds[preds >= 0.5] <- 1
-# preds[preds < 0.5] <- 0
-#tab <- table("Predictions" = preds, "Labels" = as.numeric(test["y"][[1]]))
-#library(caret)
-#print(confusionMatrix(factor(preds), factor(as.numeric(test["y"][[1]]))))
-library(pROC)
 print(roc(response = as.numeric(test["y"][[1]]), predictor = as.numeric(preds), plot = T))
-# This is not any better at predicting!!
 results <- HMeasure(as.numeric(test["y"][[1]]),preds,threshold=0.15)
 print(results$metrics$AUC)
-# Try with randomForest package. Having trouble installing this as well!

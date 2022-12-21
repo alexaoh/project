@@ -1,5 +1,5 @@
 # Experiment 2: Make generative model for our data set and sample synthetic data. 
-# Our goal is for the synthetic (generated) sample to be very similar to our input data. 
+# Our goal is for the synthetic (generated) samples to be very similar to our input data. 
 
 rm(list = ls())  # make sure to remove previously loaded variables into the Session.
 
@@ -12,6 +12,8 @@ library(caret)
 library(dplyr)
 library(MASS)
 library(kableExtra)
+library(ggplot2)
+
 source("code/utilities.R")
 
 set.seed(1234)
@@ -20,8 +22,8 @@ set.seed(1234)
 standardscaler <- T
 
 # We load the data (binarized or categorical).
-#load("data/adult_data_binarized.RData", verbose = T)
-load("data/adult_data_categ.RData", verbose = T)
+load("data/adult_data_binarized.RData", verbose = T)
+#load("data/adult_data_categ.RData", verbose = T)
 
 # List of continuous variables.
 cont <- c("age","fnlwgt","education_num","capital_gain","capital_loss","hours_per_week")
@@ -61,7 +63,8 @@ y_train <- train[, "y"] # Use this for visualization later only.
 #valid <- test[valid.indices, ]
 #test <- test[-valid.indices, ]
 
-# Scaling according to the same values abtained when scaling the training data! This is very important in all applications for generalizability!!
+# Scaling according to the same values abtained when scaling the training data.
+# This is very important in all applications for generalizability.
 if (standardscaler){
   # Centering and scaling according to scales and centers from training data. 
   d_test <- scale(test[,cont], center = m, scale = M)
@@ -81,15 +84,6 @@ if (standardscaler){
 }
 
 x_test <- test[,-which(names(test) == "y")]
-#y_test <- test[,"y"]
-
-#x_valid <- valid[,-which(names(valid) == "y")]
-#y_valid <- valid[,"y"]
-
-# Scale the adult data as well, such that we can compare the data sets after generation. 
-#adult.data.normalization <- normalize.data(data = adult.data.onehot, continuous_vars = cont, standardscaler = T)
-#adult.data.onehot <- adult.data.normalization[[1]]
-
 
 ############################ Build the VAE. 
 # Build the VAE.
@@ -103,8 +97,6 @@ enc_input <- layer_input(shape = c(input_size), name = "enc_input")
 layer_one <- layer_dense(enc_input, units=intermediate_dim, activation = "relu", name = "enc_hidden")
 enc_mean <- layer_dense(layer_one, latent_dim, name = "enc_mean")
 enc_log_var <- layer_dense(layer_one, latent_dim, name = "enc_log_var") #activation = "softplus"
-# Ensure that the standard deviations are positive 
-# Not necessary here I think though, because these are the log-vars, which could be both positive and negative. 
 
 # Sampling function in the latent space. It samples the Gaussian distribution by using the mean and variance
 # that will be learned. It returns a sampled latent vector. 
@@ -121,12 +113,8 @@ sampling <- function(args){
 z <- list(enc_mean, enc_log_var) %>% 
   layer_lambda(sampling, name = "enc_output")
 
-
-#latent_inputs <- layer_input(shape = c(latent_dim), name = "dec_input")
 decoder_layer <- layer_dense(units = intermediate_dim, activation = "relu", name = "dec_hidden")
 outputs <- layer_dense(units = input_size, name = "dec_output") 
-# Could perhaps use the sigmoid activation to restrict data to (0,1) since we are dealing with normalized input data. 
-# outputs <- layer_dense(decoder_layer, input_size) # We test this here.  
 
 vae_encoder_output <- decoder_layer(z)
 vae_decoder_output <- outputs(vae_encoder_output)
@@ -137,41 +125,13 @@ vae_loss <- function(enc_mean, enc_log_var){
   # Loss function for our VAE (with Gaussian assumptions).
   vae_reconstruction_loss <- function(y_true, y_predict){
     loss_factor <- 1 # Give weight to the reconstruction in the loss function ("hyperparameter")
-    #reconstruction_loss <- loss_mean_squared_error(y_true, y_predict) 
-    #reconstruction_loss <- loss_binary_crossentropy(y_true, y_predict) # Or binary cross entropy?
-    #reconstruction_loss <- k_mean(k_square(y_true - y_predict))
     reconstruction_loss <- k_sum(k_square(y_true - y_predict))
-    # Tror jeg antar Gaussian output når jeg bruker mean squarederror som reconstruction loss!!!!!
-    # https://stats.stackexchange.com/questions/464875/mean-square-error-as-reconstruction-loss-in-vae
-    
-    # Prøver å lage en egen loss function!
-    # if (class(y_true) == "factor"){
-    #   reconstruction_loss <- metric_categorical_crossentropy(y_true, y_predict)
-    # } else {
-    #   reconstruction_loss <- k_mean(k_square(y_true - y_predict))
-    # }
-        
-    # Siden y_true er vektor, bruk heller ifelse:
-    # Klarer ikke å finne dtype til den OPPRINNELIGE DATAEN PÅ DENNE MÅTEN!
-    # reconstruction_loss <- k_switch(k_dtype(y_true), # class(y_true) == "factor" # Fungerer ikke. 
-    #                               k_mean(k_square(y_true - y_predict)),
-    #                               metric_categorical_crossentropy(y_true, y_predict))
-    # Her må man finne ut hvordan man vil vekte faktorene vs de numeriske kovariatene!
-    # Hvilken blir størst i loss-funksjonen totalt sett? ANER IKKE!
-    
-    #reconstruction_loss <- k_mean(k_square(y_true - y_predict)) + metric_categorical_crossentropy(y_true, y_predict)
-    
-    # https://datascience.stackexchange.com/questions/28440/custom-conditional-loss-function-in-keras
-    
-    # reconstruction_loss <- function(y_true, y_predict){
-    #   l <-
-    # }
-    
+    # Assume Gaussian output when using squared error as reconstruction loss. 
     return(reconstruction_loss*loss_factor)
   }
   
   vae_kl_loss <- function(encoder_mu, encoder_log_variance){
-    kl <- -0.5*k_sum(1 + encoder_log_variance - k_square(encoder_mu) - k_exp(encoder_log_variance), axis = -1L) # Or axis = -1?
+    kl <- -0.5*k_sum(1 + encoder_log_variance - k_square(encoder_mu) - k_exp(encoder_log_variance), axis = -1L) 
     return(kl)
   }
   
@@ -225,12 +185,12 @@ history <- vae %>% fit(
 
 plot(history)
 
-############################ Make some synthetic data!
-generation_method <- 4
+############################ Make some synthetic data.
+generation_method <- 1
 K <- 1e5L
 #K <- 3*nrow(x_train)
 
-# Could generate data in four different ways now. Test all of them below and add results to the report. 
+# Could generate data in four different ways now.  
 # Tried to match these numbers to the numbers used in the project report.
 # Here we generate samples in the latent space according to the given method. 
 # Then we decode the latent space samples below. 
@@ -246,8 +206,6 @@ if (generation_method == 4){
   
 } else if (generation_method == 2){
   # Sample K/nrow(x_train) times from latent space PER training data point. 
-  # Her gir det ikke helt mening å generere noe annet enn n*nrow(x_train) antall samples, for at det skal bli balansert. 
-  # Det samme gjelder vel egentlig i metoden nedenfor?! Dette har jeg valgt å ikke bry meg om her og heller diskutere i rapporten!
   encoded <- encoder %>% predict(data.matrix(x_train))
   mus <- encoded[[1]]
   log_vars <- encoded[[2]]
@@ -298,9 +256,6 @@ decoded_data_rand <- decoder %>% predict(s)
 decoded_data_rand <- as.data.frame(decoded_data_rand)
 colnames(decoded_data_rand) <- colnames(x_train) 
 head(decoded_data_rand)
-
-# De normalize the data according to the test data. 
-#decoded_data_rand <- de.normalize.data(decoded_data_rand, cont, x_test.normalization$mins, x_test.normalization$maxs)
 
 # Revert the one hot encoding
 decoded_data_rand <- reverse.onehot.encoding(decoded_data_rand, cont, categ, has.label = F)
@@ -357,15 +312,12 @@ if (standardscaler){
   data_orig2 <- cbind(data_orig2, as.data.frame(decoded_data_rand[,-which(names(decoded_data_rand) %in% cont)]))
   decoded_data_rand <- data_orig2  
 } else {
-  # Har ikke testet denne på lenge! OBS!
   decoded_data_rand <- de.normalize.data(decoded_data_rand, cont, m, M)
 }
-
 
 summary(adult.data)
 summary(decoded_data_rand)
 
-# Round these — check later if this is correct but it seems correct to me!
 decoded_data_rand[,cont] <- round(decoded_data_rand[,cont]) # Round all the numerical variable predictions to the closest integer. 
 head(decoded_data_rand)
 
@@ -381,7 +333,6 @@ cap_loss_real <- (adult.data %>% dplyr::select(capital_loss))[[1]]
 cap_loss_gen <- (decoded_data_rand %>% dplyr::select(capital_loss))[[1]]
 length(cap_loss_real[cap_loss_real != 0])/length(cap_loss_real)
 length(cap_loss_gen[cap_loss_gen != 0])/length(cap_loss_gen) # Almost all data points are != 0 from VAE!
-
 
 table(adult.data$workclass)/sum(table(adult.data$workclass))
 table(decoded_data_rand$workclass)/sum(table(decoded_data_rand$workclass))
@@ -403,10 +354,6 @@ table(decoded_data_rand$sex)/sum(table(decoded_data_rand$sex))
 
 table(adult.data$native_country)/sum(table(adult.data$native_country))
 table(decoded_data_rand$native_country)/sum(table(decoded_data_rand$native_country))
-
-# Could do things like this also! (compare tables of factors to each other)
-table(adult.data[,c("sex")], adult.data[,c("native_country")])/sum(table(adult.data[,c("sex")], adult.data[,c("native_country")]))
-table(decoded_data_rand[,c("sex")], decoded_data_rand[,c("native_country")])/sum(table(decoded_data_rand[,c("sex")], decoded_data_rand[,c("native_country")]))
 
 cont.summary <- function(data){
   summary <- data %>%
@@ -432,28 +379,26 @@ kbl(cont.summary(decoded_data_rand), format = "latex", linesep = "", digits = 1,
   column_spec(1, monospace = T) %>% 
   print()
 
+# Make plots for showing ratios between levels in categorical features. 
+# First iteration of plots. The final type of plot that was used can be found in "investigate_data.R"
 make_ggplot_for_categ <- function(data, filename, save){
   data.categ <- data[,categ]
   data.categ.wide <- data.categ %>% tidyr::pivot_longer(categ) %>% count(name, value) %>% mutate(ratio = round(n/nrow(data.categ), 3))
-  #adult.data.categ.wide <- adult.data.categ %>% tidyr::pivot_longer(categ)
-  #adult.data.categ <- apply(adult.data.categ,FUN = function(x){table(x)/sum(table(x))}, MARGIN = 2)
   categ_plot <- data.categ.wide %>% ggplot(aes(x = name, y = ratio, fill = value)) +
-    geom_col(position = "stack")+#), show.legend = F) + # For kategorisk data må legend fjernes
+    geom_col(position = "stack")+#), show.legend = F) # Need to remove legend for categorical data (for readibility).
     geom_text(aes(label = ratio), position = position_stack(vjust = 0.5)) +
     theme_minimal() 
-  #geom_text(nudge_y = 1)
+
   if (save) ggsave(paste0("plots/",filename,".pdf"), width = 9, height = 5)
   return(categ_plot)
 }
 
-# Vanskeligere å lage disse plottene for den kategoriske dataen!!
-make_ggplot_for_categ(adult.data, "ikkenoeenda", F)
-make_ggplot_for_categ(decoded_data_rand[,colnames(adult.data)[-14]], "generated_exp2_categ_ratios_bin_data_method4", F) # Legg inn dette senere!
+# These are not very nice for the categorical data. 
+make_ggplot_for_categ(adult.data, "some_name", F)
+make_ggplot_for_categ(decoded_data_rand[,colnames(adult.data)[-14]], "generated_exp2_categ_ratios_bin_data_method4", F)
 
-
-#### For illustration purposes we make a scatter plot of the latent space (when 2 dimensional).
-library(ggplot2)
-library(dplyr)
+#### For illustration purposes we make a scatter plot of the latent space using PCA and t-SNE. 
+# Dimensionality reduction. 
 latent_train_data <- (encoder %>% predict(data.matrix(x_train)))[[3]] # We only need the latent values for this. 
 if (latent_dim == 2){
   df <- data.frame(cbind(latent_train_data, y_train))
@@ -467,7 +412,6 @@ if (latent_dim == 2){
   print(plt)
 } else {
   # Use PCA to represent our training data (first two principal components)
-  # Should perhaps use a non-linear dim-reduction algorithm instead here!
   pca <- princomp(latent_train_data)
   print(summary(pca))
   scores <- pca$scores
@@ -480,7 +424,6 @@ if (latent_dim == 2){
     ggtitle(paste0("PCA training data representation from VAE in ", latent_dim,"D latent space")) +
     theme_minimal()
   print(plt)
-  
   
   # Plot the first 3 components of PCA.
   library(rgl)
@@ -495,57 +438,9 @@ if (latent_dim == 2){
   )
   rglwidget()
   
+  # Also try with a non-linear dimensionality reduction technique like t-SNE. 
   # Use t-SNE to try to reduce the dimension to 2 (for visualization).
   library(Rtsne)
   tsne_out <- Rtsne(latent_train_data, pca = F, perplexity = 30, theta = 0.8)
   plot(tsne_out$Y, col = df$Label, asp = 1)
 }
-
-# Noen nøkkeltall (sjekker om generation gir mening). Mest for generation_method 1 kanskje?
-mean(df$Z1)
-mean(df$Z2)
-sd(df$Z1)
-sd(df$Z2)
-mean(s[,1])
-mean(s[,2])
-sd(s[,1])
-sd(s[,2])
-mean((df %>% filter(Label == 1) %>% dplyr::select(Z1))$Z1)
-mean((df %>% filter(Label == 1) %>% dplyr::select(Z2))$Z2)
-mean((df %>% filter(Label == 0) %>% dplyr::select(Z1))$Z1)
-mean((df %>% filter(Label == 0) %>% dplyr::select(Z2))$Z2)
-sd((df %>% filter(Label == 1) %>% dplyr::select(Z1))$Z1)
-sd((df %>% filter(Label == 1) %>% dplyr::select(Z2))$Z2)
-sd((df %>% filter(Label == 0) %>% dplyr::select(Z1))$Z1)
-sd((df %>% filter(Label == 0) %>% dplyr::select(Z2))$Z2)
-
-
-###################################### Try "deployment phase" in Olsen 2021 (page 10 + 11).
-# Dette skal tilsvare min generation_method = 2 oppe!! (det var tanken). Har brukt denne tankegangen i generation_method = 2 oppe!
-K <- 1
-variational_parameters <- encoder %>% predict(data.matrix(x_train[1,])) # Eller bruke treningsdataene her?
-v_means <- variational_parameters[[1]]
-v_log_vars <- variational_parameters[[2]] 
-
-sample.after <- function(K, v_means, v_log_vars){
-  # Sample from one test point. 
-  mu <- as.numeric(v_means)
-  sigma <- diag(as.numeric((exp(v_log_vars/2))^2))
-  mvrnorm(n = K, mu = mu, Sigma = sigma)
-}
-z_test <- sample.after(K, v_means, v_log_vars)
-dec_test <- decoder %>% predict(matrix(z_test, nrow = 1))
-dec_test <- as.data.frame(dec_test)
-colnames(dec_test) <- colnames(x_test)
-
-data_orig2 <- t(apply(dec_test[,cont], 1, function(r)r*M + m))
-data_orig2 <- cbind(data_orig2, as.data.frame(dec_test[,-which(names(dec_test) %in% cont)]))
-decoded_data_rand <- data_orig2  
-decoded_data_rand <- reverse.onehot.encoding(decoded_data_rand, cont, categ, has.label = F)
-
-# De normalize the data according to the test data. 
-#decoded_data_rand <- de.normalize.data(decoded_data_rand, cont, x_test.normalization$mins, x_test.normalization$maxs)
-
-# Revert the one hot encoding
-#adult.data.reverse.onehot <- reverse.onehot.encoding(adult.data.onehot, cont, categ, has.label = T)
-decoded_data_rand <- reverse.onehot.encoding(decoded_data_rand, cont, categ, has.label = F)

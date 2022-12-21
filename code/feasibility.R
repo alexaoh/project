@@ -1,4 +1,5 @@
 # This was not used after all. Kept in case I want to implement this later. 
+
 # Feasibility: distance between the counterfactual and the training data
 # As in the article, we choose Euclidean distance, k = 1/5 and w^[i] = 1/k = 1/5.
 feasibility <- function(){
@@ -28,7 +29,7 @@ feasibility <- function(){
   all.equal(k, length(k_nearest_to_e))
   
   for (i in 1:k){
-    f <- f + w/p*euclidean(e,k_nearest_to_e[i]) # Kunne sikkert bare brukt distances.ordered her, i stedet for å beregne dette på nytt her!!
+    f <- f + w/p*euclidean(e,k_nearest_to_e[i]) # Could probably have used distances.ordered here instead. 
   }
   
   # Feasibility SPM: "K nearest observed data points" står det i artikkelen. Mener de da mellom e og dataen?

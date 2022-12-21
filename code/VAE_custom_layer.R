@@ -1,4 +1,5 @@
-# We try to implement our first VAE for our adult dataset
+# Did not use this in the end. Could be an interesing alternative to the implementation I used though. 
+# Implement a VAE with a custom layer instead of custom loss function. 
 
 
 rm(list = ls())  # make sure to remove previously loaded variables into the Session.
@@ -21,6 +22,7 @@ cont <- c("age","fnlwgt","education_num","capital_gain","capital_loss","hours_pe
 cat <- setdiff(names(adult.data), cont)
 cat <- cat[-length(cat)] # Remove the label "y"!
 
+# Wrong way to normalize now. Fix this. 
 adult.data.normalized <- normalize.data(data = adult.data, continuous_vars = cont, T) # returns list with data + mins and maxs (or means and sds).
 summary(adult.data.normalized)
 adult.data <- adult.data.normalized[[1]] # we are only interested in the data for now. 
@@ -35,8 +37,6 @@ x_train <- train_and_test_data[[1]]
 # We do not really need the output variable y when building a VAE.
 x_test <- train_and_test_data[[3]]
 train_indices <- train_and_test_data[[4]]
-
-# Following this guide: https://www.datatechnotes.com/2020/06/how-to-build-variational-autoencoders-in-R.html
 
 latent_dim <- 10 # This sets the size of the latent representation (vector), 
 intermediate_dim <- 18
@@ -75,7 +75,6 @@ decoder <- keras_model(latent_inputs, outputs, name = "decoder_model")
 summary(decoder)
 
 
-
 # Instead of using a custom loss function, we make a custom layer, where the loss function is added!
 library(R6)
 
@@ -86,9 +85,7 @@ CustomVariationalLayer <- R6Class("CustomVariationalLayer",
                                   public = list(
 
                                     vae_loss = function(x_true, x_pred) {
-                                      #xent_loss <- metric_binary_crossentropy(x_true, x_pred)
                                       xent_loss <- metric_mean_squared_error(x_true, x_pred)
-                                      #xent_loss <- k_mean(k_square(x_true - x_pred))
                                       kl_loss <- -0.5 * k_mean(
                                         1 + enc_log_var - k_square(enc_mean) - k_exp(enc_log_var),
                                         axis = -1L
@@ -112,7 +109,7 @@ layer_variational <- function(object) {
 
 x_pred <- decoder(z)
 # Call the custom layer on the input and the decoded output to obtain
-# the final model output
+# the final model output.
 y <- list(enc_input, x_pred) %>%
   layer_variational()
 
@@ -131,14 +128,13 @@ vae %>% fit(
   validation_data = list(data.matrix(x_test), NULL)
 ) 
 
-# Tester å generere noe data nedenfor:
+# Manual tests for generating data. 
 n = 3
 test =  x_test[0:n,]
 x_test_encoded <- predict(encoder, data.matrix(test))
 
-decoded_data = decoder %>% predict(x_test_encoded) # Hvorfor bruke "generator" her og ikke "decoderen" fra over?
+decoded_data = decoder %>% predict(x_test_encoded) 
 
-# Ikke spesielt like foreløpig!
 head(test[,cont])
 decoded_data <- as.data.frame(decoded_data)
 colnames(decoded_data) <- colnames(test)
@@ -146,24 +142,6 @@ head(decoded_data[,cont])
 
 head(test[,1:6])
 head(decoded_data[,1:6])
-
-# I want to try to generate new data points from the decoder.
-#s <- rnorm(1000) # Generate some random data. 
-#library(dae)
-#s <- rmvnorm(rep(0, latent_dim), V = diag(10))
-s <- matrix(rnorm(100000*latent_dim, mean = 0, sd = 12), ncol = latent_dim) # Det blir feil å sample sånn!
-# Må sample fra en normalfordeling med mu = mean(encoder_mu) og sigma = mean(encoder_sigma)!
-decoded_data_rand <- decoder %>% predict(s)
-head(decoded_data_rand)
-decoded_data_rand <- as.data.frame(decoded_data_rand)
-colnames(decoded_data_rand) <- colnames(x_train)
-head(decoded_data_rand)
-
-# Normalize the decoded data in cases where we dont use sigmoid as activation of the output!
-# decoded_data_rand.normalized <- normalize.data(data = decoded_data_rand, continuous_vars = cont)
-# decoded_data_rand <- decoded_data_rand.normalized[[1]] # we are only interested in the data for now. 
-
-# Reverse one hot encoding might be a good idea!
 
 adult.data.reverse.onehot <- reverse.onehot.encoding(adult.data, cont, cat, has.label = T)
 decoded_data_rand <- reverse.onehot.encoding(decoded_data_rand, cont, cat, has.label = F)
@@ -208,9 +186,8 @@ table(adult.data.reverse.onehot$native_country)/sum(table(adult.data.reverse.one
 table(decoded_data_rand$native_country)/sum(table(decoded_data_rand$native_country))
 
 
-########################### We try to feed the autoencoder entirely with test data in order to generate new points!
-reconstructed_data <- vae %>% predict(data.matrix(x_test)) # Den bare kopierer test-dataen når jeg gjør dette!?
-# Da er det vel noe rart med implementasjonen?
+########################### We try to feed the autoencoder entirely with test data in order to generate new points.
+reconstructed_data <- vae %>% predict(data.matrix(x_test)) 
 reconstructed_data <- as.data.frame(reconstructed_data)
 colnames(reconstructed_data) <- colnames(x_test)
 
@@ -221,9 +198,8 @@ x_test.reverse.onehot <- reverse.onehot.encoding(x_test, cont, cat, has.label = 
 summary(x_test.reverse.onehot)
 summary(decoded_data_rand)
 
-##################################### HER ER SISTE FORSØK PÅ Å GENERERE "FAKE" DATA!
-#### Vi bruker variational parameters til å sample fra en normalfordeling, som deretter decodes!
-# Må sample fra en normalfordeling med mu = mean(encoder_mu) og sigma = mean(encoder_sigma)!
+##################################### Another try: generate synthetic data. 
+# Sample from a Gaussian with mu = mean(encoder_mu) og sigma = mean(encoder_sigma).
 number_samples <- 100000
 variational_parameters <- encoder %>% predict(data.matrix(x_test))
 variational_means <- variational_parameters[[1]]
@@ -231,8 +207,8 @@ variational_sigmas <- exp(variational_parameters[[2]]/2)
 avg_variational_means <- colMeans(variational_means)
 avg_variational_sigmas <- colMeans(variational_sigmas)
 library(MASS)
-s <- mvrnorm(n = number_samples, mu = avg_variational_means, Sigma = diag(avg_variational_sigmas^2) ) # Skal denen være ^2 eller ikke?
-# We then decode s!
+s <- mvrnorm(n = number_samples, mu = avg_variational_means, Sigma = diag(avg_variational_sigmas^2) ) 
+# We then decode s.
 decoded_data_rand <- decoder %>% predict(s)
 
 decoded_data_rand <- as.data.frame(decoded_data_rand)

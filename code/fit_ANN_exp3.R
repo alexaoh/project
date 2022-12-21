@@ -1,5 +1,5 @@
 # Fit the classifier for the binarized data. 
-# This exact classifier is used in Experiment 3 and 5.
+# This classifier is used in Experiment 3 and 5.
 
 setwd("/home/ajo/gitRepos/project")
 library(dplyr)
@@ -34,9 +34,6 @@ data.table::address(adult.data.onehot)
 
 # Make the design matrix for the DNN.
 adult.data.onehot <- make.data.for.ANN(adult.data.onehot, cont, label = T) 
-
-#normalized <- normalize.data(data = adult.data.onehot, continuous_vars = cont, standardscaler = standardscaler)
-#adult.data.onehot <- normalized[[1]]
 
 # Make train and test data for our model matrix adult.data.
 sample.size <- floor(nrow(adult.data.onehot) * 2/3)
@@ -92,12 +89,12 @@ ANN <- keras_model_sequential() %>%
   layer_dense(units = 3, activation = 'relu') %>% 
   layer_dense(units = 1, activation = 'sigmoid')
 
-# compile (define loss and optimizer)
+# Compile (define loss and optimizer).
 ANN %>% compile(loss = 'binary_crossentropy',
-                optimizer = optimizer_adam(), # Could try other optimizers also.  #learning_rate = 0.002
+                optimizer = optimizer_adam(), 
                 metrics = c('accuracy'))
 
-# train (fit)
+# Train (fit).
 history <- ANN %>% fit(x = data.matrix(x_train), 
                        y = y_train, 
                        epochs = 30, 
@@ -105,28 +102,27 @@ history <- ANN %>% fit(x = data.matrix(x_train),
                        validation_data = list(data.matrix(x_valid), y_valid)
 )
 
-# plot
 plot(history)
 
 print(summary(ANN))
 
-# evaluate on training data. 
+# Evaluate on training data. 
 ANN %>% evaluate(data.matrix(x_train), y_train)
 
-# evaluate on test data. 
+# Evaluate on test data. 
 ANN %>% evaluate(data.matrix(x_test), y_test)
 
-y_pred <- ANN %>% predict(data.matrix(x_test)) #%>% `>=`(0.5) #%>% k_cast("int32")
+y_pred <- ANN %>% predict(data.matrix(x_test)) 
 print(confusionMatrix(factor(as.numeric(y_pred %>% `>=`(0.5))), factor(y_test)))
 print(roc(response = y_test, predictor = as.numeric(y_pred), plot = T))
 results <- HMeasure(y_test,as.numeric(y_pred),threshold=0.5)
 print(results$metrics$AUC)
-######################### Step 1 of predictor fitting is complete!!
+######################### Step 1 of predictor fitting is complete.
 
 ANN %>% save_model_hdf5("classifiers/ANN_experiment3.h5") # Save the model such that we can load it (pretrained) in experiment 3 and 5. 
 
 # We also save the train and test split (exact data), in case we want to use it later. 
-# I rename the variables here, because I am lazy. Save as .RData in order to keep all datatypes etc (again, since I am lazy).
+# Rename the variables here, for convencience. Save as .RData in order to keep all datatypes. 
 train_ANN <- train
 test_ANN <- test
 valid_ANN <- valid

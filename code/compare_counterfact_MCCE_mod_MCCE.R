@@ -67,7 +67,6 @@ knitr::kable(df, format = "latex", linesep = "", digits = 3, booktabs = T) %>%
   row_spec(c(1,9), background = "lgrey") %>% # Have defined a color lgrey in latex document.
   print()
 
-
 ############## Then we look at exp4 and exp6 (with the categorical data).
 load("results/Hs/H_ANN_H100_K10000_binFALSE.RData", verbose = T)
 load("results/final_counterfactuals_ANN_H100_K10000_binFALSE.RData", verbose = T)

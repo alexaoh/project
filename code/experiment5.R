@@ -539,25 +539,7 @@ generate_one_counterfactual_all_points <- function(D_h_pp){
 }
 
 
-final_counterfactuals_exp5 <- generate_one_counterfactual_all_points(D_h_post_processed)
-
-########################### Performance metrics. All these should be calculated on "final_counterfactuals"!
-# Violation: Number of actionability constraints violated by the counterfactual. 
-# This should inherently be zero if I have implemented the algorithm correctly!! 
-# Thus, this is an ok check to do. 
-
-violate <- function(){
-  # We leave this out for now!
-  unique_D_h$violation <- rep(NA, nrow(unique_D_h))
-  for (i in 1:nrow(unique_D_h)){
-    unique_D_h[i,"violation"] <- sum(x_h[,fixed_features] != unique_D_h[i,fixed_features]) 
-  }
-  
-  # Success: if the counterfactual produces a positive predictive response.
-  # This is 1 inherently, from the post-processing step done above (where we only keep the rows in D_h that have positive predictive response).
-  prediction_model(unique_D_h, method = CLI.args[1]) # As we can see, success = 1 for these counterfactuals. 
-  
-}
+final_counterfactuals_exp6 <- generate_one_counterfactual_all_points(D_h_post_processed)
 
 ############################## Experiments. 
 # Experiment 1:
@@ -565,9 +547,9 @@ violate <- function(){
 
 L0s <- c()
 L2s <- c()
-N_CEs <- rep(NA, length(final_counterfactuals_exp5))
-for (i in 1:length(final_counterfactuals_exp5)){
-  l <- final_counterfactuals_exp5[[i]]
+N_CEs <- rep(NA, length(final_counterfactuals_exp6))
+for (i in 1:length(final_counterfactuals_exp6)){
+  l <- final_counterfactuals_exp6[[i]]
   n <- nrow(l)
   N_CEs[i] <- n
   if (n >= 1){
@@ -637,9 +619,13 @@ fulfill_fixed <- function(h, D_h){
 
 rows_with_fixed_feat_correct <- rep(NA,nrow(H)) # For seeing how many generating inds have the same fixed features as h.
 props_of_pred_y <- rep(NA,nrow(H))
+actionable_and_valid <- rep(NA,nrow(H))
 for (i in 1:nrow(H)){
   props_of_pred_y[i] <- nrow(fulfill_crit3_D_h(D_h_per_point[[i]], 0.5))/K
-  rows_with_fixed_feat_correct[i] <- nrow(fulfill_fixed(H[i,],D_h_per_point[[i]]))
+  actionable <- fulfill_fixed(H[i,],D_h_per_point[[i]])
+  rows_with_fixed_feat_correct[i] <- nrow(actionable)
+  act_and_valid <- fulfill_crit3_D_h(actionable,0.5)
+  actionable_and_valid[i] <- nrow(act_and_valid)/nrow(actionable)
 }
 mean(props_of_pred_y)
 sd(props_of_pred_y)
@@ -648,3 +634,9 @@ hist(props_of_pred_y, breaks = 40)
 mean(rows_with_fixed_feat_correct)
 sd(rows_with_fixed_feat_correct)
 hist(rows_with_fixed_feat_correct, breaks = 40)
+
+# Check proportion of positive outcomes IN the data with correct fixed features. 
+# I.e. proportion of valid samples among the actionable samples.
+mean(actionable_and_valid)
+sd(actionable_and_valid)
+hist(actionable_and_valid, breaks = 40)

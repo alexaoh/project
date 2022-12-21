@@ -15,8 +15,6 @@ load("adult_data_binarized.RData", verbose = T)
 # List of continuous variables.
 cont <- c("age","fnlwgt","education_num","capital_gain","capital_loss","hours_per_week")
 
-
-
 ##################### Tests. 
 test_normalization_and_denormalization <- function(){
   # Test that normalizing and de-normalizing gives the same data back. 

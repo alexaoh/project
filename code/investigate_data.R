@@ -1,4 +1,4 @@
-# We try to make some interesting plots concerning the data.
+# We make some interesting plots concerning the generated data.
 library(ggplot2)
 library(ggmosaic)
 library(dplyr)
@@ -28,7 +28,7 @@ categ <- categ[-length(categ)] # Remove the label "y"!
 
 summary(adult.data[,cont])
 
-# Make densities for each variable. 
+# Make density plots for each variable. 
 make_dens <- function(variable, data, save, limits){
   plt <- data[,cont] %>% ggplot() +
     geom_density(aes(x = .data[[variable]])) +
@@ -39,7 +39,7 @@ make_dens <- function(variable, data, save, limits){
   return(plt)
 }
 
-# Should set the x-axis to the same values for each continuous variable in each experiment!!
+# Set the x-axis to the same values for each continuous variable in each experiment.
 limits <- list(
   c(-1,100),
   c(-1,600000),
@@ -117,12 +117,11 @@ make_mosaic_plot <- function(data, first.feat, second.feat, exp.num, vers.num){
     theme_minimal() +
     scale_fill_grey()
   ggsave(paste0("plots/mosaic/",exp.num,"_",first.feat,"_",second.feat,"_",vers.num,".pdf"), width = 9, height = 5)
-  return(plt) # Not sure why this shit is not working!!?!?!??
+  return(plt) # Not sure why not working at the moment. 
 }
-
 #print(make_mosaic_plot(adult.data,"sex","race","adult_data","bin"))
 
-# I guess I will do it manually instead then!
+# I will do it manually instead, since the function did not work for the mosaic plot (a specific problem here).
 plt <- D2 %>% ggplot() +
   geom_mosaic(mapping = aes(x = product(sex), fill = occupation)) +
   theme_minimal() +

@@ -1,12 +1,12 @@
 # Experiment 3: Reproduce results from MCCE with a ANN.
 
-rm(list = ls())  # make sure to remove previously loaded variables into the Session.
+rm(list = ls())  # make sure to remove previously loaded variables into the Session. Just in case. 
 
 setwd("/home/ajo/gitRepos/project")
-library(rpart) # Try this for building CART trees instead!
+library(rpart) # For building CART trees. 
 library(rpart.plot) # For plotting rpart trees in a more fancy way.
-library(dplyr)
-library(keras) # for deep learning models. 
+library(dplyr) # For data manipulation. 
+library(keras) # For deep learning models. 
 library(pROC) # For ROC curve.
 library(hmeasure) # For AUC (I am testing this for comparison to pROC).
 library(caret) # For confusion matrix.
@@ -17,9 +17,7 @@ source("code/utilities.R")
 # Get command line arguments.
 CLI.args <- take.arguments()
 # Arguments: method, length(H), K, generate (TRUE) or load (FALSE), binarized data (TRUE) or not (FALSE)
-for (i in CLI.args){
-  print(i)
-}
+print(CLI.args)
 
 # Parameter for choosing standardscaler or not. 
 standardscaler = T
@@ -62,18 +60,6 @@ cont <- c("age","fnlwgt","education_num","capital_gain","capital_loss","hours_pe
 categ <- setdiff(names(adult.data), cont)
 categ <- categ[-length(categ)] # Remove the label "y"!
 
-##################### The code below (until step2) is not needed I think!
-############ We do not care about the first CLI-argument (the model).
-############ We simply (for now) only implement the ANN, for less clutter :)
-adult.data.onehot <- data.frame(adult.data) # make a copy of the dataframe for one hot encoding in ANN.
-tracemem(adult.data) == tracemem(adult.data.onehot) # it is a deep copy.
-data.table::address(adult.data)
-data.table::address(adult.data.onehot)
-# The memory addresses are different. 
-
-# Make the design matrix for the DNN.
-adult.data.onehot <- make.data.for.ANN(adult.data.onehot, cont, label = T) 
-
 #########################Step 2: Use MCCE to generate counterfactuals for 100 randomly sample individuals in the test data.
 # First we need to build the trees and build the latent distribution model. 
 data_min_response <- adult.data[,-which(names(adult.data) == "y")] # All covariates (removed the response from the data frame).
@@ -94,23 +80,18 @@ for (i in 1:q){
   covariates <- paste(c(fixed_features,mut_features[1:i-1]), collapse = "+")
   tot_form <- as.formula(paste(mut_features[i]," ~ ", covariates, sep= ""))
   total_formulas[[i]] <- tot_form
-  #print(tot_form)
   if (mut_datatypes[[i]] == "factor"){ 
-    #T_j[[i]] <- tree(tot_form, data = adult.data, control = tree.control(nobs = nrow(adult.data), mincut = 80, minsize = 160), split = "gini", x = T)
-    #T_j[[i]] <- rpart(tot_form, data = adult.data, method = "class", control = rpart.control(minsplit = 2, minbucket = 1)) 
     T_j[[i]] <- rpart(tot_form, data = adult.data, method = "class", control = rpart.control(minbucket = 5, cp = 1e-6)) 
-    # Method = "class": Uses Gini index, I believe. Check the docs again. 
+    # Method = "class": Uses Gini index by default. 
   } else if (mut_datatypes[[i]] == "integer" || mut_datatypes[[i]] == "numeric"){ # mean squared error.
-    #T_j[[i]] <- tree(tot_form, data = adult.data, control = tree.control(nobs = nrow(adult.data), mincut = 5, minsize = 10), split = "deviance", x = T)
-    #T_j[[i]] <- rpart(tot_form, data = adult.data, method = "anova", control = rpart.control(minsplit = 2, minbucket = 1)) 
     T_j[[i]] <- rpart(tot_form, data = adult.data, method = "anova", control = rpart.control(minbucket = 5, cp = 1e-10)) 
-    # Method = "anova": SST-(SSL+SSR). Check out the docs. This should (hopefully) be the same as Mean Squared Error. 
+    # Method = "anova": SST-(SSL+SSR).
   } else { 
     stop("Error: Datatypes need to be either factor or integer/numeric.") # We need to use "numeric" if we have normalized the data!
   } 
 }
 
-# Med så liten cp blir det et problem å plotte trærne!
+# For plotting the trees if desired. 
 # plot_tree(1)
 # plot_tree(2)
 # plot_tree(3)
@@ -132,9 +113,7 @@ generate <- function(h, K){ # K = 10000 is used in the article for the experimen
   
   # Fill the matrix D_h with copies of the vectors of fixed features. 
   # All rows should have the same value in all the fixed features. 
-  #D_h[, fixed_features] <- h %>% dplyr::select(all_of(fixed_features))
   D_h[,fixed_features] <- h[fixed_features]
-  #D_h[, mut_features] <- h %>% dplyr::select(all_of(mut_features)) # Add this to get the correct datatypes (these are not used when predicting though!)
   D_h[,mut_features] <- h[mut_features]
   
   # Now setup of D_h is complete. We move on to the second part, where we append columns to D_h. 
@@ -153,22 +132,15 @@ generate <- function(h, K){ # K = 10000 is used in the article for the experimen
       largest_class <- sorted$x
       largest_index <- sorted$ix
       if (feature_regressed_dtype == "factor"){
-        # s <- runif(1)
-        # if (s >= largest_class[1]){ # This only works for two classes at this point! Perhaps I can simply use the sample function with the list of probabilities?
-        #   d[i] <- levels(adult.data[,feature_regressed])[largest_index[2]]
-        # } else {
-        #   d[i] <- levels(adult.data[,feature_regressed])[largest_index[1]]
-        # }
-        # I think the following is a better solution. This works for the categorical data as well!
         d[i] <- sample(x = levels(adult.data[,feature_regressed])[largest_index], size = 1, prob = largest_class) 
-      } else { # Numeric
+      } else { # Numeric.
         d[i] <- end_node_distr
       }
     }
     D_h[,u+j] <- d # Add all the tree samples based on the jth mutable feature to the next column. 
   }
   D_h[,colnames(adult.data)[-length(colnames(adult.data))]] %>% mutate_if(is.character,as.factor) 
-  # Change characters to factors! THIS IS NOT TESTED THOROUGHLY BUT SEEMS TO WORK OK.
+  # Change characters to factors.
   # We also rearrange the columns to match the column orders in the original data. 
   # This is an implementation detail that is done to be able to easier calculated sparsity etc in the pre-processing. 
 }
@@ -199,7 +171,7 @@ generate_counterfact_for_H <- function(H_l, K.num){
   for (i in 1:nrow(H_l)){
     # x_h is a factual. 
     x_h <- H_l[i,]
-    D_h_per_point[[i]] <- generate(x_h, K = K.num) # I artikkelen hadde de 10000.  
+    D_h_per_point[[i]] <- generate(x_h, K = K.num) 
     cat("Generated for point ",i,"\n")
   }
   return(D_h_per_point)
@@ -223,14 +195,14 @@ post.processing <- function(D_h, H, data){ # 'data' is used to calculate normali
     colm <- (data %>% dplyr::select(colnames(data)[i]))[[1]]
     if (class(colm) == "integer" || class(colm) == "numeric"){
       q <- quantile(colm, c(0.01, 0.99))
-      norm.factors[[i]] <- c(q[1][[1]],q[2][[1]]) # Divide each term in Gower by M_j-m_j, but with 0.99 and 0.01 quantiles respectively!
+      norm.factors[[i]] <- c(q[1][[1]],q[2][[1]]) # Divide each term in Gower by M_j-m_j, but with 0.99 and 0.01 quantiles respectively.
     } else {
       norm.factors[[i]] <- NA
     }
   }
   
   fulfill_crit3_D_h <- function(D_h, c){
-    # Build design matrix manually to avoid contrast problems with factors with missing levels (when not generating "enough" data)!!
+    # Build design matrix manually to avoid contrast problems with factors with missing levels (when not generating "enough" data).
     col_names <- colnames(x_test_ANN)
     col_names_categ <- setdiff(col_names,cont)
     onehot_test_dat <- data.frame(D_h[,cont])
@@ -259,9 +231,7 @@ post.processing <- function(D_h, H, data){ # 'data' is used to calculate normali
     }
     
     predictions <- as.numeric(ANN %>% predict(data.matrix(onehot_test_dat)))
-    #c <- 0.5
-    D_h_crit3 <- D_h[predictions >= c,] # prediction_model(*) is the R function that predicts 
-    # according to the model we want to make explanations for. 
+    D_h_crit3 <- D_h[predictions >= c,] 
     # We can see that many rows are the same. The duplicates are removed below. 
     unique_D_h <- unique(D_h_crit3)
     return(unique_D_h)
@@ -281,8 +251,6 @@ post.processing <- function(D_h, H, data){ # 'data' is used to calculate normali
   
   add_metrics_D_h_all_points <- function(D_h_pp, H_l, norm.factors){
     # Calculates sparsity and Gower for all counterfactuals and adds the columns to each respective D_h.
-    #D_h_pp <- D_h_per_point
-    #H_l <- H
     for (i in 1:length(D_h_pp)){
       D_h_pp[[i]] <- gower_D_h(H_l[i,], D_h_pp[[i]], norm.factors)
       D_h_pp[[i]] <- sparsity_D_h(H_l[i,], D_h_pp[[i]])
@@ -333,28 +301,7 @@ generate_one_counterfactual_all_points <- function(D_h_pp){
 
 final_counterfactuals <- generate_one_counterfactual_all_points(D_h_post_processed)
 
-########################### Performance metrics. All these should be calculated on "final_counterfactuals"!
-# Violation: Number of actionability constraints violated by the counterfactual. 
-# This should inherently be zero if I have implemented the algorithm correctly!! 
-# Thus, this is an ok check to do. 
-
-violate <- function(){
-  # Not used for now. 
-  unique_D_h$violation <- rep(NA, nrow(unique_D_h))
-  for (i in 1:nrow(unique_D_h)){
-    unique_D_h[i,"violation"] <- sum(x_h[,fixed_features] != unique_D_h[i,fixed_features]) 
-  }
-  
-  # Success: if the counterfactual produces a positive predictive response.
-  # This is 1 inherently, from the post-processing step done above (where we only keep the rows in D_h that have positive predictive response).
-  prediction_model(unique_D_h, method = CLI.args[1]) # As we can see, success = 1 for these counterfactuals. 
-  
-}
-
-############################## Experiments. 
-# Experiment 1:
 # Averages of all the metrics calculated and added to unique_D_h.
-
 L0s <- c()
 L2s <- c()
 N_CEs <- rep(NA, length(final_counterfactuals))
